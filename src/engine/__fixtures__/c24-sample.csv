@@ -1,0 +1,8 @@
+Transaktionstyp;Buchungsdatum;Karteneinsatz;Betrag;Zahlungsempfänger;IBAN;BIC;Verwendungszweck;Beschreibung;Kontonummer;Kontoname;Kategorie;Unterkategorie;Bargeldabhebung
+Gutschrift;01.05.2026;;3500,00;Arbeitgeber GmbH;DE1234567890;COBADEFFXXX;Gehalt Mai;;123456;C24 Pluskonto;Einkommen;;
+Pocket-Umbuchung;02.05.2026;;-325,00;;;;Umbuchung Sparkonto;;123456;C24 Pluskonto;Sparen;;
+Pocket-Umbuchung;02.05.2026;;325,00;;;;Umbuchung Sparkonto;;789012;Sparkonto;Sparen;;
+Online-Kartenzahlung;05.05.2026;04.05.2026;-42,50;REWE;DE9876543210;;;;123456;Essen;Lebensmittel;;
+Online-Kartenzahlung;12.05.2026;11.05.2026;-89,00;DB Fernverkehr;;;;;123456;Reisen;Reisen;;
+Lastschrift;15.05.2026;;-49,99;Spotify AB;;;;;123456;VERTRÄGE;Unterhaltung;;
+Überweisung;20.05.2026;;-120,00;Landlord;;;;;123456;C24 Pluskonto;Wohnen;;

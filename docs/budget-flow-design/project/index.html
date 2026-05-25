@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>BudgetFlow — V6 Synthesis &amp; New Surfaces</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600;700&family=Fraunces:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&display=swap" rel="stylesheet" />
+
+<style>
+  html, body { margin: 0; padding: 0; background: #11131a; color: #e7e8ec; font-family: 'DM Sans', system-ui, sans-serif; }
+  * { box-sizing: border-box; }
+  body { background: #0e0f14; }
+</style>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script src="mock-data.js"></script>
+<script src="v6-tokens.js"></script>
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="v6-synthesis.jsx"></script>
+<script type="text/babel" src="v6-new-surfaces.jsx"></script>
+<script type="text/babel" src="v2-cashflow.jsx"></script>
+<script type="text/babel" src="v3-ledger.jsx"></script>
+<script type="text/babel" src="v4-warm.jsx"></script>
+<script type="text/babel" src="v5-hybrid.jsx"></script>
+
+</head>
+<body>
+
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+function App() {
+  const { DesignCanvas, DCSection, DCArtboard } = window;
+  return (
+    <DesignCanvas
+      title="BudgetFlow — V6 Synthesis &amp; New Surfaces"
+      subtitle="Direction synthesized from your v5/v3/v2 picks. New surfaces (lock states, mid-month modal, CSV wizard) in the same language.">
+
+      <DCSection id="v6" title="V6 — Plan &amp; Simulate" subtitle="Light cream + periwinkle, modern sans, horizontal ledger, simulation-first. The new baseline.">
+        <DCArtboard id="dash" label="V6 — Main dashboard" width={1280} height={1040}>
+          <V6Synthesis />
+        </DCArtboard>
+      </DCSection>
+
+      <DCSection id="lock-states" title="Lock-in states" subtitle="Planned vs Confirmed — quiet visual distinction. Confirmed = verified by CSV import.">
+        <DCArtboard id="lockcards" label="Empty · Planned · Confirmed" width={1280} height={620}>
+          <LockStatesShowcase />
+        </DCArtboard>
+      </DCSection>
+
+      <DCSection id="midmonth" title="Mid-month funding modal" subtitle="Triggered when a planned expense is added after the current month already has a lock-in.">
+        <DCArtboard id="modal-a" label="A — Compact dialog (stacked)" width={720} height={680}>
+          <MidMonthModalA />
+        </DCArtboard>
+        <DCArtboard id="modal-b" label="B — Side-by-side w/ sparklines" width={1040} height={680}>
+          <MidMonthModalB />
+        </DCArtboard>
+      </DCSection>
+
+      <DCSection id="csv-wizard" title="CSV import wizard" subtitle="Month-end reconciliation. Four key steps: upload, review, reconcile, allocate leftover.">
+        <DCArtboard id="csv-1" label="Step 1 — Upload" width={1040} height={720}>
+          <CsvWizardStep1 />
+        </DCArtboard>
+        <DCArtboard id="csv-2" label="Step 2 — Review transactions" width={1040} height={720}>
+          <CsvWizardStep2 />
+        </DCArtboard>
+        <DCArtboard id="csv-3" label="Step 3 — Reconcile vs locked" width={1040} height={720}>
+          <CsvWizardStep3 />
+        </DCArtboard>
+        <DCArtboard id="csv-4" label="Step 4 — Allocate leftover" width={1040} height={720}>
+          <CsvWizardStep4 />
+        </DCArtboard>
+      </DCSection>
+
+      <DCSection id="earlier" title="Earlier explorations" subtitle="V2–V5 from the previous round. Kept for reference — the V6 synthesis above takes precedence.">
+        <DCArtboard id="v2" label="V2 — Cashflow Hero" width={1280} height={1040}>
+          <V2Cashflow />
+        </DCArtboard>
+        <DCArtboard id="v3" label="V3 — Ledger Pro" width={1280} height={1040}>
+          <V3Ledger />
+        </DCArtboard>
+        <DCArtboard id="v4" label="V4 — Warm Editorial" width={1280} height={1040}>
+          <V4Warm />
+        </DCArtboard>
+        <DCArtboard id="v5" label="V5 — Hybrid" width={1280} height={1040}>
+          <V5Hybrid />
+        </DCArtboard>
+      </DCSection>
+
+    </DesignCanvas>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+
+</body>
+</html>
