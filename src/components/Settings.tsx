@@ -1,12 +1,14 @@
 import { useState } from 'react';
-import { formatCurrency } from '../utils/formatting';
-import type { BudgetState, FixedExpense } from '../engine/types';
+import { formatCurrency, formatMonth } from '../utils/formatting';
+import type { BudgetState, FinancialBaseline, FixedExpense, Month } from '../engine/types';
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface Props {
   budget:             BudgetState;
+  currentMonth:       Month;
   setIncome:          (amount: number) => void;
+  updateFinancialBaseline: (baseline: FinancialBaseline) => void;
   addFixedExpense:    (e: Omit<FixedExpense, 'id' | 'actualAmount'>) => void;
   updateFixedExpense: (id: string, changes: Partial<Omit<FixedExpense, 'id'>>) => void;
   removeFixedExpense: (id: string) => void;
@@ -19,7 +21,9 @@ interface Props {
 
 export default function Settings({
   budget,
+  currentMonth,
   setIncome,
+  updateFinancialBaseline,
   addFixedExpense,
   updateFixedExpense,
   removeFixedExpense,
@@ -27,6 +31,34 @@ export default function Settings({
   onResetWorkingData,
   onClose,
 }: Props) {
+
+  const baseline = budget.financialBaseline;
+  const baselineStale = baseline !== undefined && baseline.asOfMonth !== currentMonth;
+
+  // ── Starting balances ──
+  const [checkingStr, setCheckingStr] = useState(String(baseline?.checkingBalance ?? ''));
+  const [potStr, setPotStr] = useState(String(baseline?.potBalance ?? ''));
+  const [setAsideStr, setSetAsideStr] = useState(
+    String(baseline?.setAsideTransferredThisMonth ?? ''),
+  );
+  const [baselineAdvancedOpen, setBaselineAdvancedOpen] = useState(false);
+  const [incomeReceivedStr, setIncomeReceivedStr] = useState(
+    String(baseline?.incomeReceivedThisMonth ?? ''),
+  );
+  const [fixedPaidStr, setFixedPaidStr] = useState(String(baseline?.fixedPaidThisMonth ?? ''));
+  const [freeSpentStr, setFreeSpentStr] = useState(String(baseline?.freeSpentThisMonth ?? ''));
+
+  function commitBaseline() {
+    updateFinancialBaseline({
+      asOfMonth: currentMonth,
+      checkingBalance: parseFloat(checkingStr) || 0,
+      potBalance: parseFloat(potStr) || 0,
+      setAsideTransferredThisMonth: parseFloat(setAsideStr) || undefined,
+      incomeReceivedThisMonth: parseFloat(incomeReceivedStr) || undefined,
+      fixedPaidThisMonth: parseFloat(fixedPaidStr) || undefined,
+      freeSpentThisMonth: parseFloat(freeSpentStr) || undefined,
+    });
+  }
 
   // ── Income editing ──
   const [incomeStr, setIncomeStr] = useState(String(budget.income));
@@ -111,6 +143,110 @@ export default function Settings({
           >
             Import bank CSV…
           </button>
+        </section>
+
+        <section className="settings-section">
+          <h3 className="settings-section-title">Starting balances</h3>
+          <p className="settings-hint">
+            Cash on hand in checking and pot — used to anchor free budget and pot display when
+            we can&apos;t read your bank automatically.
+          </p>
+          {baselineStale && baseline && (
+            <p className="settings-warning">
+              Balances are from {formatMonth(baseline.asOfMonth)} — update for {formatMonth(currentMonth)}.
+            </p>
+          )}
+          <div className="settings-baseline-form">
+            <div className="input-group">
+              <label className="input-label">Checking balance</label>
+              <div className="input-prefix">
+                <input
+                  className="input"
+                  type="number"
+                  min="0"
+                  value={checkingStr}
+                  onChange={e => setCheckingStr(e.target.value)}
+                  onBlur={commitBaseline}
+                />
+              </div>
+            </div>
+            <div className="input-group">
+              <label className="input-label">Pot balance</label>
+              <div className="input-prefix">
+                <input
+                  className="input"
+                  type="number"
+                  min="0"
+                  value={potStr}
+                  onChange={e => setPotStr(e.target.value)}
+                  onBlur={commitBaseline}
+                />
+              </div>
+            </div>
+            <div className="input-group">
+              <label className="input-label">Set-aside already transferred this month</label>
+              <div className="input-prefix">
+                <input
+                  className="input"
+                  type="number"
+                  min="0"
+                  value={setAsideStr}
+                  onChange={e => setSetAsideStr(e.target.value)}
+                  onBlur={commitBaseline}
+                />
+              </div>
+            </div>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => setBaselineAdvancedOpen(v => !v)}
+            >
+              {baselineAdvancedOpen ? 'Hide' : 'Show'} advanced
+            </button>
+            {baselineAdvancedOpen && (
+              <>
+                <div className="input-group">
+                  <label className="input-label">Income received this month</label>
+                  <div className="input-prefix">
+                    <input
+                      className="input"
+                      type="number"
+                      min="0"
+                      value={incomeReceivedStr}
+                      onChange={e => setIncomeReceivedStr(e.target.value)}
+                      onBlur={commitBaseline}
+                    />
+                  </div>
+                </div>
+                <div className="input-group">
+                  <label className="input-label">Fixed already paid</label>
+                  <div className="input-prefix">
+                    <input
+                      className="input"
+                      type="number"
+                      min="0"
+                      value={fixedPaidStr}
+                      onChange={e => setFixedPaidStr(e.target.value)}
+                      onBlur={commitBaseline}
+                    />
+                  </div>
+                </div>
+                <div className="input-group">
+                  <label className="input-label">Free budget already spent</label>
+                  <div className="input-prefix">
+                    <input
+                      className="input"
+                      type="number"
+                      min="0"
+                      value={freeSpentStr}
+                      onChange={e => setFreeSpentStr(e.target.value)}
+                      onBlur={commitBaseline}
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
         </section>
 
         <section className="settings-section">

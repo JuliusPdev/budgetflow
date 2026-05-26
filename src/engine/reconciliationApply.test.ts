@@ -23,6 +23,7 @@ const budget: BudgetState = {
   unplannedExpenses: [],
   envelopeActualizations: [],
   plannedExpensePayments: [],
+  plannedExpenseRecoveries: [],
   plannedExpenseSettlements: [],
 };
 
@@ -174,7 +175,15 @@ describe('applyReconciliation', () => {
 
     const summary = computeReconciliationSummary('2026-05', confirmed, budget);
     expect(summary.plannedExpensePayments).toEqual([
-      { id: 'trip', name: 'Trip', planned: 500, targetMonth: '2026-06', actual: 480 },
+      {
+        id: 'trip',
+        name: 'Trip',
+        planned: 500,
+        targetMonth: '2026-06',
+        actual: 480,
+        recoveryOwed: 0,
+        recoveryRepaid: 0,
+      },
     ]);
     expect(summary.settledExpenses).toEqual([]);
   });
@@ -267,6 +276,50 @@ describe('applyReconciliation', () => {
       potDeduction: 300,
     });
     expect(next.unplannedExpenses).toHaveLength(0);
+  });
+
+  it('books recovery when a CSV pot transfer repays an early free-budget advance', () => {
+    const withEarlyPay: BudgetState = {
+      ...budget,
+      plannedExpensePayments: [
+        {
+          id: 'pay1',
+          plannedExpenseId: 'trip',
+          month: '2026-04',
+          amount: 500,
+          potDeduction: 200,
+        },
+      ],
+    };
+    const confirmed: ConfirmedTransaction[] = [
+      {
+        id: '1',
+        date: '2026-05-02',
+        transactionType: 'csv',
+        payee: '',
+        description: null,
+        amount: -250,
+        subAccount: 'C24 Pluskonto',
+        confirmedCategory: 'set-aside-transfer',
+      },
+    ];
+
+    const next = applyReconciliation(withEarlyPay, {
+      month: '2026-05',
+      confirmed,
+      envelopeSurplusDecisions: [],
+      plannedExpenseSurplusDecisions: [],
+      leftoverFreeBudget: 0,
+      leftoverAllocation: null,
+      potAvailable: 500,
+    });
+
+    const recoveryTotal = (next.plannedExpenseRecoveries ?? []).reduce((s, r) => s + r.amount, 0);
+    expect(recoveryTotal).toBe(250);
+    expect(next.plannedExpenseRecoveries?.[0]).toMatchObject({
+      plannedExpenseId: 'trip',
+      month: '2026-05',
+    });
   });
 
   it('uses free budget for the uncovered part of an early planned expense payment', () => {
@@ -481,6 +534,67 @@ describe('applyReconciliation', () => {
       actualAmount: 2000,
       potDeduction: 1000,
       surplusDestination: null,
+    });
+  });
+
+  it('records May pot lock-in and early trip payment for ledger reconciliation scenario', () => {
+    const tripBudget: BudgetState = {
+      ...budget,
+      plannedExpenses: [
+        {
+          id: 'trip',
+          name: 'Trip',
+          amount: 800,
+          targetMonth: '2026-09',
+          category: 'travel',
+          confidence: 'confirmed',
+        },
+      ],
+    };
+    const confirmed: ConfirmedTransaction[] = [
+      {
+        id: 'pot',
+        date: '2026-05-02',
+        transactionType: 'csv',
+        payee: '',
+        description: null,
+        amount: -200,
+        subAccount: 'C24 Pluskonto',
+        confirmedCategory: 'set-aside-transfer',
+        lockInMonth: '2026-05',
+      },
+      {
+        id: 'trip-pay',
+        date: '2026-05-15',
+        transactionType: 'csv',
+        payee: 'Travel',
+        description: null,
+        amount: -400,
+        subAccount: 'C24 Pluskonto',
+        confirmedCategory: 'planned-expense-settlement',
+        linkedExpenseId: 'trip',
+      },
+    ];
+
+    const next = applyReconciliation(tripBudget, {
+      month: '2026-05',
+      confirmed,
+      envelopeSurplusDecisions: [],
+      plannedExpenseSurplusDecisions: [],
+      leftoverFreeBudget: 0,
+      leftoverAllocation: null,
+      potAvailable: 600,
+    });
+
+    const mayLockTotal = next.lockIns
+      .filter(l => l.month === '2026-05')
+      .reduce((sum, l) => sum + l.lockedAmount, 0);
+    expect(mayLockTotal).toBe(200);
+    expect(next.plannedExpensePayments[0]).toMatchObject({
+      plannedExpenseId: 'trip',
+      month: '2026-05',
+      amount: 400,
+      potDeduction: 400,
     });
   });
 });

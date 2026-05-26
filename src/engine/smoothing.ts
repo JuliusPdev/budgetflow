@@ -1,4 +1,13 @@
 import { availableForMonth, incomeForMonth } from './income';
+import {
+  baselineFixedPaidReduction,
+  mergeAnchoredFreeBudget,
+  openingPotSeed,
+} from './financialBaseline';
+import {
+  appendVirtualRecoveries,
+  splitSetAsideForMonth,
+} from './plannedExpenseRecovery';
 import type {
   BudgetState,
   EngineOutput,
@@ -7,6 +16,7 @@ import type {
   MonthResult,
   PlannedExpense,
   PlannedExpensePayment,
+  PlannedExpenseRecovery,
   PlannedExpenseSettlement,
   UnplannedExpense,
 } from './types';
@@ -25,6 +35,38 @@ export function addMonths(month: Month, n: number): Month {
   const y = Math.floor(total / 12);
   const m = (total % 12) + 1;
   return `${y}-${String(m).padStart(2, '0')}`;
+}
+
+/** When fundingStartMonth is missing, infer from payments, locks, or current month. */
+export function resolveFundingStartMonth(
+  expense: PlannedExpense,
+  budget: Pick<BudgetState, 'lockIns' | 'plannedExpensePayments'>,
+  currentMonth: Month,
+): Month {
+  if (expense.fundingStartMonth) return expense.fundingStartMonth;
+
+  const paymentMonths = (budget.plannedExpensePayments ?? [])
+    .filter(p => p.plannedExpenseId === expense.id)
+    .map(p => p.month)
+    .sort();
+  if (paymentMonths.length > 0) return paymentMonths[0];
+
+  return currentMonth;
+}
+
+function earliestAlgorithmStartMonth(
+  plannedExpenses: PlannedExpense[],
+  settlementMap: Map<string, PlannedExpenseSettlement>,
+  budget: BudgetState,
+  currentMonth: Month,
+): Month {
+  let start = currentMonth;
+  for (const expense of plannedExpenses) {
+    if (settlementMap.has(expense.id)) continue;
+    const expenseStart = resolveFundingStartMonth(expense, budget, currentMonth);
+    if (expenseStart < start) start = expenseStart;
+  }
+  return start;
 }
 
 // ─── Core smoothing algorithm ─────────────────────────────────────────────────
@@ -133,8 +175,10 @@ export function runEngine(state: BudgetState, currentMonth: Month): EngineOutput
     unplannedExpenses            = [],
     envelopeActualizations       = [],
     plannedExpensePayments       = [],
+    plannedExpenseRecoveries     = [],
     plannedExpenseSettlements    = [],
     monthCarryAdjustments        = [],
+    financialBaseline,
   } = state;
 
   // A = monthly available after subtracting all predictable fixed outflows.
@@ -241,27 +285,21 @@ export function runEngine(state: BudgetState, currentMonth: Month): EngineOutput
     existing.push(expense);
     expenseItems.set(expense.targetMonth, existing);
 
-    const paidBeforeFinalSettlement = (paymentsByExpense.get(expense.id) ?? [])
-      .reduce((sum, payment) => sum + payment.amount, 0);
-    const remainingAmount = Math.max(0, expense.amount - paidBeforeFinalSettlement);
-
     const settlement = settlementMap.get(expense.id);
 
-    // Algorithm: only unsettled expenses.
-    // Deferred expenses (startFromMonth > currentMonth) go into a separate map so the
-    // first smooth() pass — which determines the current month's rate — ignores them.
-    // They are merged back in for the second pass (future months only).
-    if (!settlement && remainingAmount > 0) {
+    // Smooth on full planned amount — early payments do not lower the set-aside rate.
+    // Free-budget portions of early payments are recovered via setAsideRecovery slices.
+    if (!settlement && expense.amount > 0) {
       const forecastMonth = expense.targetMonth < currentMonth ? currentMonth : expense.targetMonth;
       expenseTotals.set(
         forecastMonth,
-        (expenseTotals.get(forecastMonth) ?? 0) + remainingAmount
+        (expenseTotals.get(forecastMonth) ?? 0) + expense.amount
       );
       const isDeferred = expense.startFromMonth != null && expense.startFromMonth > currentMonth;
       const targetMap = isDeferred ? deferredAlgorithmExpenses : regularAlgorithmExpenses;
       targetMap.set(
         forecastMonth,
-        (targetMap.get(forecastMonth) ?? 0) + remainingAmount
+        (targetMap.get(forecastMonth) ?? 0) + expense.amount
       );
     }
   }
@@ -299,7 +337,11 @@ export function runEngine(state: BudgetState, currentMonth: Month): EngineOutput
     .filter(([m]) => m < currentMonth)
     .reduce((sum, [, amt]) => sum + amt, 0);
 
-  const potCarry = pastLocked - pastPhysicalDeductions + pastEnvelopePot;
+  const potCarry =
+    openingPotSeed(financialBaseline, currentMonth, lockIns) +
+    pastLocked -
+    pastPhysicalDeductions +
+    pastEnvelopePot;
 
   // ── Past months (read-only historical display) ─────────────────────────────
   // Show 3 months of history so the user can scroll left to see what happened.
@@ -341,6 +383,9 @@ export function runEngine(state: BudgetState, currentMonth: Month): EngineOutput
       unplannedTotal,
       incomeCarryover,
       setAsideRecommended: 0,
+      setAsideRecovery: 0,
+      setAsideFunding: 0,
+      plannedExpenseRecoverySlices: [],
       setAsideLocked:      locked,
       freeBudget:          monthAvailable - locked - unplannedTotal
                              + (freeSurplusByMonth.get(month) ?? 0)
@@ -366,17 +411,28 @@ export function runEngine(state: BudgetState, currentMonth: Month): EngineOutput
   const minDisplayEnd = addMonths(currentMonth, 11); // at least 11 future months
   const algorithmEnd = lastExpenseMonth ?? minDisplayEnd;
 
+  const algorithmStart = earliestAlgorithmStartMonth(
+    plannedExpenses,
+    settlementMap,
+    state,
+    currentMonth,
+  );
+
   const algorithmMonths: Month[] = [];
-  let cursor = currentMonth;
+  let cursor = algorithmStart;
   while (cursor <= algorithmEnd) {
     algorithmMonths.push(cursor);
     cursor = addMonths(cursor, 1);
   }
 
-  // Run the algorithm to get the recommended rate for all months including current.
+  // Run the algorithm from the anchored funding start (may be before current month).
   // Deferred expenses are excluded here — they don't affect this month's target.
   const rates = smooth(algorithmMonths, regularAlgorithmExpenses, potCarry);
-  const currentMonthAlgorithmRate = rates[0] < EPSILON ? 0 : rates[0];
+  const currentMonthRateIndex = algorithmMonths.indexOf(currentMonth);
+  const currentMonthAlgorithmRate =
+    currentMonthRateIndex >= 0 && rates[currentMonthRateIndex] >= EPSILON
+      ? rates[currentMonthRateIndex]
+      : 0;
 
   // What has the user actually contributed to the pot in the current month so far?
   // This is the voluntary lock-in plus any envelope surplus directed to pot.
@@ -384,43 +440,36 @@ export function runEngine(state: BudgetState, currentMonth: Month): EngineOutput
   const currentEnvelopePot  = envelopePotByMonth.get(currentMonth) ?? 0;
   const currentActualContribution = currentLocked + currentEnvelopePot;
 
-  // Use the higher of the actual contribution and the algorithm rate as the effective
-  // current-month input to the pot. This keeps future rates correct in two situations:
-  //   • User hasn't acted yet (contribution = 0): algorithm rate is the floor, so
-  //     future rates stay the same as the original recommendation.
-  //   • User overfunds (contribution > rate): future rates drop immediately to reflect
-  //     the extra money already in the pot.
-  const effectiveCurrentContribution = Math.max(currentActualContribution, currentMonthAlgorithmRate);
+  const currentMonthSplit = splitSetAsideForMonth(
+    currentMonthAlgorithmRate,
+    plannedExpenses,
+    plannedExpensePayments,
+    plannedExpenseRecoveries,
+  );
+
+  // Funding slice (not recovery) is what increases the pot.
+  const effectiveCurrentFunding = Math.max(
+    currentActualContribution,
+    currentMonthSplit.funding,
+  );
   const currentMonthExpenses = expenseTotals.get(currentMonth) ?? 0;
-  const potAfterCurrentMonth = potCarry + effectiveCurrentContribution - currentMonthExpenses;
+  const potAfterCurrentMonth = potCarry + effectiveCurrentFunding - currentMonthExpenses;
 
-  const futureAlgorithmMonths = algorithmMonths.slice(1);
-  // Merge deferred expenses back in for the future-months pass.
-  // They were excluded from the first pass to keep this month's rate unchanged;
-  // now they're distributed across future months starting from their startFromMonth.
-  const mergedAlgorithmExpenses = new Map(regularAlgorithmExpenses);
-  for (const [month, amt] of deferredAlgorithmExpenses) {
-    mergedAlgorithmExpenses.set(month, (mergedAlgorithmExpenses.get(month) ?? 0) + amt);
-  }
-  const futureRates = futureAlgorithmMonths.length > 0
-    ? smooth(futureAlgorithmMonths, mergedAlgorithmExpenses, potAfterCurrentMonth)
-    : [];
-
-  // rateMap: current month shows what the user still needs to save voluntarily —
-  // the algorithm rate reduced by any envelope surplus already in the pot.
-  // Future months use rates recomputed from the effective current-month contribution.
-  const displayCurrentMonthRate = Math.max(0, currentMonthAlgorithmRate - currentEnvelopePot);
+  // Always use first-pass rates (full planned amount over the funding window).
+  // A second pass from depleted pot balance after recovery is repaid inflated rates (~€267)
+  // and violated the invariant that early payments do not lower the monthly plan.
   const rateMap = new Map<Month, number>();
-  rateMap.set(currentMonth, displayCurrentMonthRate < EPSILON ? 0 : displayCurrentMonthRate);
-  futureAlgorithmMonths.forEach((m, i) => {
-    rateMap.set(m, futureRates[i] < EPSILON ? 0 : futureRates[i]);
+  algorithmMonths.forEach((m, i) => {
+    const raw = rates[i] < EPSILON ? 0 : rates[i];
+    const envelopePot = m === currentMonth ? currentEnvelopePot : 0;
+    rateMap.set(m, Math.max(0, raw - envelopePot));
   });
 
   // Display window: always at least 11 future months so the grid is never sparse.
   // Months beyond the last expense get rate = 0 (nothing left to save for).
   const displayEnd = algorithmEnd > minDisplayEnd ? algorithmEnd : minDisplayEnd;
-  const allMonths: Month[] = [...algorithmMonths];
-  cursor = addMonths(algorithmEnd, 1);
+  const allMonths: Month[] = [];
+  cursor = currentMonth;
   while (cursor <= displayEnd) {
     allMonths.push(cursor);
     cursor = addMonths(cursor, 1);
@@ -429,9 +478,18 @@ export function runEngine(state: BudgetState, currentMonth: Month): EngineOutput
   // Build the result array for current month and forward.
   let pot = potCarry;
   let physicalPot = potCarry;
+  let recoveryLedger: PlannedExpenseRecovery[] = [...plannedExpenseRecoveries];
 
   const futureMonthResults: MonthResult[] = allMonths.map((month) => {
     const rate = rateMap.get(month) ?? 0;
+    const split = splitSetAsideForMonth(
+      rate,
+      plannedExpenses,
+      plannedExpensePayments,
+      recoveryLedger,
+    );
+    recoveryLedger = appendVirtualRecoveries(recoveryLedger, month, split.byExpense);
+    const fundingContribution = split.funding;
     const items = expenseItems.get(month) ?? [];
     const plannedTotal = items.reduce((sum, e) => sum + e.amount, 0);
     const algorithmExpenseTotal = expenseTotals.get(month) ?? 0;
@@ -444,9 +502,8 @@ export function runEngine(state: BudgetState, currentMonth: Month): EngineOutput
     const unplannedTotal  = monthUnplanned.reduce((s, e) => s + e.amount, 0);
     const incomeCarryover = carryBoostByMonth.get(month) ?? 0;
 
-    // Pot simulation: always add rate so future-month projections are mathematically correct.
-    // We override the display value for the current month separately (see potAfterDisplay below).
-    pot += rate;
+    // Pot simulation: only the funding slice enters the pot (recovery repays free-budget advances).
+    pot += fundingContribution;
     pot -= algorithmExpenseTotal;
 
     physicalPot += isCurrentMonth ? currentActualContribution : 0;
@@ -470,11 +527,15 @@ export function runEngine(state: BudgetState, currentMonth: Month): EngineOutput
     // For future months, it reflects the recommended set-aside.
     const effectiveSetAside = isCurrentMonth ? Math.max(currentLocked, rate) : rate;
     const monthIncome = incomeForMonth(month, state);
-    const monthAvailable = availableForMonth(month, state, fixedTotal, modeBSavingsTotal);
-    const freeBudget = monthAvailable - effectiveSetAside - unplannedTotal
+    let monthAvailable = availableForMonth(month, state, fixedTotal, modeBSavingsTotal);
+    if (isCurrentMonth) {
+      monthAvailable -= baselineFixedPaidReduction(financialBaseline, month);
+    }
+    const theoreticalFree = monthAvailable - effectiveSetAside - unplannedTotal
       + (freeSurplusByMonth.get(month) ?? 0)
       + (settlementFreeSurplusByMonth.get(month) ?? 0)
       + incomeCarryover;
+    const anchored = mergeAnchoredFreeBudget(theoreticalFree, financialBaseline, month);
 
     return {
       month,
@@ -486,8 +547,13 @@ export function runEngine(state: BudgetState, currentMonth: Month): EngineOutput
       unplannedTotal,
       incomeCarryover,
       setAsideRecommended: rate,
+      setAsideRecovery: split.recovery,
+      setAsideFunding: split.funding,
+      plannedExpenseRecoverySlices: split.byExpense,
       setAsideLocked: locked,
-      freeBudget,
+      freeBudget: anchored.freeBudget,
+      freeBudgetTheoretical: anchored.anchored !== null ? anchored.theoretical : undefined,
+      freeBudgetAnchored: anchored.anchored ?? undefined,
       potAfter: potAfterDisplay,
       physicalPotAfter: physicalPot,
       lockStatus: computeLockStatus(isCurrentMonth, locked, rate),

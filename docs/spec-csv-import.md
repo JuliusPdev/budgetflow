@@ -73,7 +73,7 @@ The mapping is stored in localStorage and reused for every subsequent import.
 Using the Kontoname mapping and Transaktionstyp, the app makes a first-pass suggestion for every line:
 
 ### Internal transfers (Pocket-Umbuchung)
-- From main checking to a savings/pot account → suggest "Set-aside transfer" or "Savings contribution"
+- From main checking to a savings/pot account → suggest "Pot Transfer (Set aside)" or "Savings contribution"
 - From main checking to an envelope → suggest "[Envelope name] transfer"
 - Between any accounts → suggest "Internal transfer"
 
@@ -87,7 +87,7 @@ Using the Kontoname mapping and Transaktionstyp, the app makes a first-pass sugg
 - All other debits → suggest "Free budget spend"
 
 ### Savings/pot sub-account
-- Any incoming transfer → suggest "Set-aside transfer" or "Savings contribution"
+- Any incoming transfer → suggest "Pot Transfer (Set aside)" or "Savings contribution"
 
 ---
 
@@ -127,7 +127,7 @@ This is the core of the import. Show a table with one row per transaction.
 - Income
 - Fixed expense — [select which one]
 - Envelope spend — [select which envelope]
-- Set-aside transfer (confirms pot contribution)
+- Pot Transfer (Set aside) (confirms pot contribution; internal id `set-aside-transfer`)
 - Savings contribution — [select which goal]
 - Planned expense settlement — [select which planned expense]
 - Free budget spend (no further action)

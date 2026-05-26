@@ -10,12 +10,20 @@ import type {
   Month,
   PlannedExpense,
   PlannedExpensePayment,
+  PlannedExpenseRecovery,
   PlannedExpenseSettlement,
   SavingsGoal,
   SurplusDestination,
   UnplannedExpense,
 } from '../engine/types';
 import { buildCarryAdjustments, mergeCarryAdjustments } from '../engine/carryForward';
+import { applyFinancialBaselineEffects } from '../engine/financialBaseline';
+import {
+  backfillRecoveriesFromLockIns,
+  recoveriesFromLockInAmount,
+  removeRecoveriesForFreeUp,
+} from '../engine/plannedExpenseRecovery';
+import type { FinancialBaseline } from '../engine/types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -37,6 +45,7 @@ const EMPTY_BUDGET: BudgetState = {
   unplannedExpenses: [],
   envelopeActualizations: [],
   plannedExpensePayments: [],
+  plannedExpenseRecoveries: [],
   plannedExpenseSettlements: [],
   reconciledMonths: [],
   monthCarryAdjustments: [],
@@ -57,8 +66,13 @@ function migrateBudget(b: BudgetState): BudgetState {
     incomeByMonth: b.incomeByMonth ?? {},
     lockIns: b.lockIns.map(l => ({ ...l, lockState: l.lockState ?? ('planned' as const) })),
     plannedExpensePayments: b.plannedExpensePayments ?? [],
+    plannedExpenseRecoveries: backfillRecoveriesFromLockIns({
+      ...b,
+      plannedExpenseRecoveries: b.plannedExpenseRecoveries ?? [],
+    }),
     reconciledMonths: b.reconciledMonths ?? [],
     monthCarryAdjustments: b.monthCarryAdjustments ?? [],
+    financialBaseline: b.financialBaseline,
   };
 }
 
@@ -139,7 +153,14 @@ export function useBudgetState(currentMonth: Month) {
   function addPlannedExpense(expense: Omit<PlannedExpense, 'id'>): void {
     update(b => ({
       ...b,
-      plannedExpenses: [...b.plannedExpenses, { ...expense, id: crypto.randomUUID() }],
+      plannedExpenses: [
+        ...b.plannedExpenses,
+        {
+          ...expense,
+          id: crypto.randomUUID(),
+          fundingStartMonth: expense.fundingStartMonth ?? currentMonth,
+        },
+      ],
     }));
   }
 
@@ -189,25 +210,44 @@ export function useBudgetState(currentMonth: Month) {
 
   // Adds to the current month's locked total. If no record exists yet, creates one.
   // Multiple lock-ins per month accumulate — each call adds to the running total.
+  function stampFundingStartMonths(expenses: PlannedExpense[]): PlannedExpense[] {
+    return expenses.map(e =>
+      e.fundingStartMonth ? e : { ...e, fundingStartMonth: currentMonth },
+    );
+  }
+
   function lockIn(amount: number): void {
     update(b => {
+      const recoveries = b.plannedExpenseRecoveries ?? [];
+      const booked = recoveriesFromLockInAmount(
+        amount,
+        currentMonth,
+        b.plannedExpenses,
+        b.plannedExpensePayments ?? [],
+        recoveries,
+      );
+      const plannedExpenses = stampFundingStartMonths(b.plannedExpenses);
       const alreadyExists = b.lockIns.some(l => l.month === currentMonth);
       if (alreadyExists) {
         return {
           ...b,
+          plannedExpenses,
           lockIns: b.lockIns.map(l =>
             l.month === currentMonth
               ? { ...l, lockedAmount: l.lockedAmount + amount }
               : l
           ),
+          plannedExpenseRecoveries: [...recoveries, ...booked],
         };
       }
       return {
         ...b,
+        plannedExpenses,
         lockIns: [
           ...b.lockIns,
           { id: crypto.randomUUID(), month: currentMonth, lockedAmount: amount, lockState: 'planned' as const },
         ],
+        plannedExpenseRecoveries: [...recoveries, ...booked],
       };
     });
   }
@@ -221,6 +261,11 @@ export function useBudgetState(currentMonth: Month) {
         l.month === currentMonth
           ? { ...l, lockedAmount: Math.max(0, l.lockedAmount - amount) }
           : l
+      ),
+      plannedExpenseRecoveries: removeRecoveriesForFreeUp(
+        amount,
+        currentMonth,
+        b.plannedExpenseRecoveries ?? [],
       ),
     }));
   }
@@ -432,7 +477,15 @@ export function useBudgetState(currentMonth: Month) {
 
   // Called by the onboarding wizard when the user finishes setup.
   function completeOnboarding(initialBudget: BudgetState): void {
-    setAppState({ budget: migrateBudget(initialBudget), previousSnapshot: null });
+    const migrated = migrateBudget(initialBudget);
+    const withBaseline = migrated.financialBaseline
+      ? applyFinancialBaselineEffects(migrated, migrated.financialBaseline)
+      : migrated;
+    setAppState({ budget: withBaseline, previousSnapshot: null });
+  }
+
+  function updateFinancialBaseline(baseline: FinancialBaseline): void {
+    update(b => applyFinancialBaselineEffects(b, baseline));
   }
 
   // Called by the import flow to replace everything at once.
@@ -467,6 +520,7 @@ export function useBudgetState(currentMonth: Month) {
         plannedExpenseSettlements:    [],
         reconciledMonths:             [],
         monthCarryAdjustments:        [],
+        financialBaseline:          prev.budget.financialBaseline,
       },
       previousSnapshot: null,
     }));
@@ -501,6 +555,7 @@ export function useBudgetState(currentMonth: Month) {
     addPlannedExpensePayment,
     undo,
     completeOnboarding,
+    updateFinancialBaseline,
     importBudget,
     applyReconciliationBudget,
     isMonthReconciled,

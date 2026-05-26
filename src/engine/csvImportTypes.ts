@@ -149,6 +149,9 @@ export interface ReconciliationSummary {
     planned: number;
     targetMonth: Month;
     actual: number;
+    /** Free-budget advance still to repay via future set-asides (before this import is applied). */
+    recoveryOwed: number;
+    recoveryRepaid: number;
   }[];
   settledExpenses: {
     id: string;

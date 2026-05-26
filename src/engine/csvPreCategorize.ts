@@ -76,14 +76,14 @@ function suggestForRow(
     if (mapping?.type === 'checking' && isDebit) {
       return {
         category: 'set-aside-transfer',
-        label: 'Set-aside transfer',
+        label: 'Pot Transfer (Set aside)',
         uncertain: false,
       };
     }
     if (isCredit && (mapping?.type === 'pot' || mapping?.type === 'savings')) {
       return {
         category: mapping.type === 'savings' ? 'savings-contribution' : 'set-aside-transfer',
-        label: mapping.type === 'savings' ? 'Savings contribution' : 'Set-aside transfer',
+        label: mapping.type === 'savings' ? 'Savings contribution' : 'Pot Transfer (Set aside)',
         linkedSavingsGoalId: mapping.linkedId,
         uncertain: !mapping.linkedId && mapping.type === 'savings',
       };
@@ -112,7 +112,7 @@ function suggestForRow(
     if (isCredit) {
       return {
         category: mapping.type === 'savings' ? 'savings-contribution' : 'set-aside-transfer',
-        label: mapping.type === 'savings' ? 'Savings contribution' : 'Set-aside transfer',
+        label: mapping.type === 'savings' ? 'Savings contribution' : 'Pot Transfer (Set aside)',
         linkedSavingsGoalId: mapping.linkedId,
         uncertain: !mapping.linkedId && mapping.type === 'savings',
       };
@@ -245,7 +245,7 @@ export const CATEGORY_LABELS: Record<CategoryType, string> = {
   income: 'Income',
   'fixed-expense': 'Fixed expense',
   'envelope-spend': 'Envelope spend',
-  'set-aside-transfer': 'Set-aside transfer',
+  'set-aside-transfer': 'Pot Transfer (Set aside)',
   'savings-contribution': 'Savings contribution',
   'planned-expense-settlement': 'Planned expense settlement',
   'free-budget-spend': 'Free budget spend',

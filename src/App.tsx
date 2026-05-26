@@ -93,7 +93,9 @@ function App() {
       {showSettings && (
         <Settings
           budget={state.budget}
+          currentMonth={state.currentMonth}
           setIncome={state.setIncome}
+          updateFinancialBaseline={state.updateFinancialBaseline}
           addFixedExpense={state.addFixedExpense}
           updateFixedExpense={state.updateFixedExpense}
           removeFixedExpense={state.removeFixedExpense}

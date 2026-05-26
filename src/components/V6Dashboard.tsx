@@ -1,8 +1,23 @@
-import { useEffect, useRef, useState } from 'react';
-import { Settings2, Undo2, X } from 'lucide-react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { ChevronDown, ChevronRight, Settings2, Undo2, X } from 'lucide-react';
+import { fundingProgressForExpense } from '../engine/plannedExpenseRecovery';
 import { addMonths, runEngine } from '../engine/smoothing';
 import { formatCurrency, formatCurrencyExact, formatMonth } from '../utils/formatting';
-import type { BudgetState, EngineOutput, Month, MonthResult, PlannedExpense } from '../engine/types';
+import {
+  loadLedgerSectionExpanded,
+  saveLedgerSectionExpanded,
+  type LedgerSectionId,
+} from '../utils/ledgerSectionsStorage';
+import { plannedExpenseLedgerCell, setAsideLedgerAmount } from '../utils/ledgerDisplay';
+import type {
+  BudgetState,
+  EngineOutput,
+  FixedExpense,
+  Month,
+  MonthResult,
+  PlannedExpense,
+  SavingsGoal,
+} from '../engine/types';
 
 interface Props {
   engine: EngineOutput;
@@ -139,6 +154,61 @@ function countMonthsInclusive(startMonth: Month, endMonth: Month): number {
     cursor = addMonths(cursor, 1);
   }
   return count;
+}
+
+function formatLedgerCellAmount(value: number): string {
+  return `${value < 0 ? '-' : ''}${formatCurrency(Math.abs(value)).replace('€', '')}`;
+}
+
+function getFixedExpenseAmountForMonth(
+  expense: FixedExpense,
+  month: Month,
+  budget: BudgetState,
+): number {
+  if (!expense.isEnvelope) return expense.amount;
+  const actualization = budget.envelopeActualizations.find(
+    act => act.envelopeId === expense.id && act.month === month,
+  );
+  return actualization ? actualization.actualAmount : expense.amount;
+}
+
+function getMonthlySavingsContribution(goal: SavingsGoal): number {
+  return goal.mode === 'monthly' ? goal.monthlyAmount : 0;
+}
+
+interface LedgerSectionToggleProps {
+  sectionId: LedgerSectionId;
+  label: string;
+  expanded: boolean;
+  onToggle: (sectionId: LedgerSectionId) => void;
+  controlsId: string;
+  detailCount?: number;
+}
+
+function LedgerSectionToggle({
+  sectionId,
+  label,
+  expanded,
+  onToggle,
+  controlsId,
+  detailCount,
+}: LedgerSectionToggleProps) {
+  const detailSuffix =
+    detailCount !== undefined && detailCount > 0 ? ` (${detailCount})` : '';
+
+  return (
+    <button
+      type="button"
+      className="v6-ledger-section-toggle"
+      data-testid={`ledger-section-toggle-${sectionId}`}
+      aria-expanded={expanded}
+      aria-controls={controlsId}
+      onClick={() => onToggle(sectionId)}
+    >
+      {expanded ? <ChevronDown size={14} aria-hidden /> : <ChevronRight size={14} aria-hidden />}
+      <span>{label}{detailSuffix}</span>
+    </button>
+  );
 }
 
 interface InlineFormProps {
@@ -403,6 +473,14 @@ function SetAsideLockCard({
         <span style={{ width: `${lockedPct}%` }} />
       </div>
       <p className="v6-card-caption">{getCaption()}</p>
+      {(current?.setAsideRecovery ?? 0) > 0 && (
+        <p className="v6-card-caption v6-card-caption--detail">
+          {formatCurrency(current!.setAsideRecovery)} repays an early free-budget advance
+          {(current?.setAsideFunding ?? 0) > 0 && (
+            <> · {formatCurrency(current!.setAsideFunding)} toward planned expenses</>
+          )}
+        </p>
+      )}
 
       {!lockForm && !freeUpForm && (
         <div className="v6-lock-actions">
@@ -479,6 +557,8 @@ function HeroCards({
   const current = getCurrentResult(engine, currentMonth);
   const spent = getSpentThisMonth(current);
   const freeBudget = current?.freeBudget ?? 0;
+  const freeBudgetAnchored = current?.freeBudgetAnchored;
+  const freeBudgetTheoretical = current?.freeBudgetTheoretical;
   const remainingFree = Math.max(0, freeBudget - spent);
   const pot = current?.physicalPotAfter ?? 0;
   const spentPct = freeBudget > 0 ? Math.min(100, Math.round((spent / freeBudget) * 100)) : 0;
@@ -507,6 +587,15 @@ function HeroCards({
           <span>{formatCurrency(spent)} spent</span>
           <span>{formatCurrency(remainingFree)} remaining</span>
         </div>
+        {freeBudgetAnchored !== undefined && freeBudgetTheoretical !== undefined &&
+          Math.abs(freeBudgetAnchored - freeBudgetTheoretical) > 1 && (
+          <p className="v6-card-caption v6-card-caption--detail">
+            Includes {formatCurrency(freeBudgetAnchored)} from checking on hand
+            {freeBudgetTheoretical !== freeBudget && (
+              <> · plan formula {formatCurrency(freeBudgetTheoretical)}</>
+            )}
+          </p>
+        )}
       </article>
 
       <article className="v6-card v6-hero-card">
@@ -550,52 +639,89 @@ function HorizontalLedger({
   onPlanExpenseForMonth: (month: Month) => void;
 }) {
   const [editingExpense, setEditingExpense] = useState<{ expense: PlannedExpense; initialFocus: 'name' | 'amount' } | null>(null);
+  const [sectionsExpanded, setSectionsExpanded] = useState(loadLedgerSectionExpanded);
   const months = engine.months;
   const sortedPlannedExpenses = [...budget.plannedExpenses].sort(comparePlannedExpensesByTime);
+  const monthlySavingsGoals = budget.savingsGoals.filter(g => g.mode === 'monthly');
   const gridStyle = timelineGridColumns(months.length);
   const timelineWidth = TIMELINE_LABEL_WIDTH + months.length * TIMELINE_MONTH_WIDTH;
-  const rows = [
-    {
-      group: 'Inflow',
-      label: 'Income',
-      values: months.map(
-        month =>
-          (budget.incomeByMonth?.[month.month] ?? budget.income) + month.incomeCarryover,
-      ),
-      tone: 'ink',
-    },
-    {
-      group: 'Outflow',
-      label: 'Fixed expenses',
-      values: months.map(() => -engine.fixedTotal),
-      tone: 'ink2',
-    },
-    {
-      group: 'Outflow',
-      label: 'Savings',
-      values: months.map(() => -engine.modeBSavingsTotal),
-      tone: 'ink2',
-    },
-    {
-      group: 'Outflow',
-      label: 'Set-aside to pot',
-      values: months.map(month => -month.setAsideRecommended),
-      tone: 'amber',
-    },
-    {
-      group: 'Answer',
-      label: 'Free to spend',
-      values: months.map(month => month.freeBudget),
-      tone: 'peri',
-      highlight: true,
-    },
-    {
-      group: 'Answer',
-      label: 'Pot balance end',
-      values: months.map(month => month.potAfter),
-      tone: 'ink',
-    },
-  ];
+  const hasIncomeCarryover = months.some(month => month.incomeCarryover > 0);
+  const unplannedLineItems = budget.unplannedExpenses;
+  const hasUnplannedSpend = months.some(month => month.unplannedTotal > 0);
+  const showSetAsideSplit = months.some(
+    month => month.setAsideRecovery > 0 || month.setAsideFunding > 0,
+  );
+  const payments = budget.plannedExpensePayments ?? [];
+  const recoveries = budget.plannedExpenseRecoveries ?? [];
+  const incomeValues = months.map(
+    month => (budget.incomeByMonth?.[month.month] ?? budget.income) + month.incomeCarryover,
+  );
+  const baseIncomeValues = months.map(
+    month => budget.incomeByMonth?.[month.month] ?? budget.income,
+  );
+  const carryoverValues = months.map(month => month.incomeCarryover);
+
+  function toggleSection(sectionId: LedgerSectionId) {
+    setSectionsExpanded(prev => {
+      const next = { ...prev, [sectionId]: !prev[sectionId] };
+      saveLedgerSectionExpanded(next);
+      return next;
+    });
+  }
+
+  function renderGroupRow(groupLabel: string) {
+    return (
+      <div className="v6-ledger-row v6-ledger-group" style={gridStyle}>
+        <div>{groupLabel}</div>
+        {months.map(month => (
+          <div key={month.month} className={month.month === currentMonth ? 'is-current' : ''} />
+        ))}
+      </div>
+    );
+  }
+
+  function renderValueCells(values: number[], tone: string) {
+    return values.map((value, valueIndex) => {
+      const month = months[valueIndex];
+      return (
+        <div
+          key={month.month}
+          className={`v6-ledger-value v6-ledger-tone--${tone} ${month.month === currentMonth ? 'is-current' : ''} ${month.month < currentMonth ? 'is-past' : ''}`}
+        >
+          {formatLedgerCellAmount(value)}
+        </div>
+      );
+    });
+  }
+
+  function renderSummaryRow(
+    label: ReactNode,
+    values: number[],
+    tone: string,
+    options?: { highlight?: boolean },
+  ) {
+    return (
+      <div
+        className={`v6-ledger-row ${options?.highlight ? 'is-highlight' : ''}`}
+        style={gridStyle}
+      >
+        <div className={`v6-ledger-label v6-ledger-tone--${tone}`}>{label}</div>
+        {renderValueCells(values, tone)}
+      </div>
+    );
+  }
+
+  function renderSubitemRow(key: string, label: string, values: number[], tone: string) {
+    return (
+      <div key={key} className="v6-ledger-row v6-ledger-row--subitem" style={gridStyle}>
+        <div className={`v6-ledger-subitem-label v6-ledger-tone--${tone}`}>
+          <span className="v6-ledger-dot" aria-hidden />
+          <span>{label}</span>
+        </div>
+        {renderValueCells(values, tone)}
+      </div>
+    );
+  }
 
   return (
     <div className="v6-ledger-scroll">
@@ -627,45 +753,188 @@ function HorizontalLedger({
           })}
         </div>
 
-        {rows.map((row, rowIndex) => {
-          const showGroup = rowIndex === 0 || rows[rowIndex - 1].group !== row.group;
-          return (
-            <div key={row.label}>
-              {showGroup && (
-                <div className="v6-ledger-row v6-ledger-group" style={gridStyle}>
-                  <div>{row.group}</div>
-                  {months.map(month => <div key={month.month} className={month.month === currentMonth ? 'is-current' : ''} />)}
-                </div>
-              )}
-              <div className={`v6-ledger-row ${row.highlight ? 'is-highlight' : ''}`} style={gridStyle}>
-                <div className={`v6-ledger-label v6-ledger-tone--${row.tone}`}>{row.label}</div>
-                {row.values.map((value, valueIndex) => {
-                  const month = months[valueIndex];
-                  return (
-                    <div
-                      key={month.month}
-                      className={`v6-ledger-value v6-ledger-tone--${row.tone} ${month.month === currentMonth ? 'is-current' : ''} ${month.month < currentMonth ? 'is-past' : ''}`}
-                    >
-                      {value < 0 ? '-' : ''}{formatCurrency(Math.abs(value)).replace('€', '')}
-                    </div>
-                  );
-                })}
+        {renderGroupRow('Inflow')}
+        {renderSummaryRow(
+          hasIncomeCarryover ? (
+            <LedgerSectionToggle
+              sectionId="income"
+              label="Income"
+              expanded={sectionsExpanded.income}
+              onToggle={toggleSection}
+              controlsId="ledger-section-income"
+            />
+          ) : (
+            'Income'
+          ),
+          incomeValues,
+          'ink',
+        )}
+        {hasIncomeCarryover && sectionsExpanded.income && (
+          <div id="ledger-section-income">
+            {renderSubitemRow('income-base', 'Monthly income', baseIncomeValues, 'ink')}
+            {renderSubitemRow('income-carry', 'Carried over', carryoverValues, 'ink')}
+          </div>
+        )}
+
+        {renderGroupRow('Outflow')}
+        {budget.fixedExpenses.length > 0 && (
+          <>
+            {renderSummaryRow(
+              <LedgerSectionToggle
+                sectionId="fixed"
+                label="Fixed expenses"
+                expanded={sectionsExpanded.fixed}
+                onToggle={toggleSection}
+                controlsId="ledger-section-fixed"
+                detailCount={budget.fixedExpenses.length}
+              />,
+              months.map(month =>
+                -budget.fixedExpenses.reduce(
+                  (sum, expense) =>
+                    sum + getFixedExpenseAmountForMonth(expense, month.month, budget),
+                  0,
+                ),
+              ),
+              'ink2',
+            )}
+            {sectionsExpanded.fixed && (
+              <div id="ledger-section-fixed">
+                {budget.fixedExpenses.map(expense =>
+                  renderSubitemRow(
+                    expense.id,
+                    expense.name,
+                    months.map(month => -getFixedExpenseAmountForMonth(expense, month.month, budget)),
+                    expense.isEnvelope ? 'amber' : 'ink2',
+                  ),
+                )}
               </div>
-            </div>
-          );
-        })}
+            )}
+          </>
+        )}
+
+        {engine.modeBSavingsTotal > 0 && (
+          <>
+            {renderSummaryRow(
+              monthlySavingsGoals.length > 0 ? (
+                <LedgerSectionToggle
+                  sectionId="savings"
+                  label="Savings"
+                  expanded={sectionsExpanded.savings}
+                  onToggle={toggleSection}
+                  controlsId="ledger-section-savings"
+                  detailCount={monthlySavingsGoals.length}
+                />
+              ) : (
+                'Savings'
+              ),
+              months.map(() => -engine.modeBSavingsTotal),
+              'ink2',
+            )}
+            {sectionsExpanded.savings && monthlySavingsGoals.length > 0 && (
+              <div id="ledger-section-savings">
+                {monthlySavingsGoals.map(goal =>
+                  renderSubitemRow(
+                    goal.id,
+                    goal.name,
+                    months.map(() => -getMonthlySavingsContribution(goal)),
+                    'ink2',
+                  ),
+                )}
+              </div>
+            )}
+          </>
+        )}
+
+        {hasUnplannedSpend && (
+          <>
+            {renderSummaryRow(
+              <LedgerSectionToggle
+                sectionId="spent"
+                label="Spent from free budget"
+                expanded={sectionsExpanded.spent}
+                onToggle={toggleSection}
+                controlsId="ledger-section-spent"
+                detailCount={unplannedLineItems.length}
+              />,
+              months.map(month => -month.unplannedTotal),
+              'ink2',
+            )}
+            {sectionsExpanded.spent && (
+              <div id="ledger-section-spent">
+                {unplannedLineItems.map(expense =>
+                  renderSubitemRow(
+                    expense.id,
+                    expense.name,
+                    months.map(month => {
+                      const onMonth = month.unplannedExpenses.find(item => item.id === expense.id);
+                      return onMonth ? -onMonth.amount : 0;
+                    }),
+                    'ink2',
+                  ),
+                )}
+              </div>
+            )}
+          </>
+        )}
+
+        {renderSummaryRow(
+          'Set-aside to pot',
+          months.map(month => -setAsideLedgerAmount(month, currentMonth, isMonthReconciled)),
+          'amber',
+        )}
+        {showSetAsideSplit && (
+          <div id="ledger-section-set-aside-split">
+            {months.some(month => month.setAsideRecovery > 0) &&
+              renderSubitemRow(
+                'set-aside-recovery',
+                'Recovering advance',
+                months.map(month => -month.setAsideRecovery),
+                'amber',
+              )}
+            {months.some(month => month.setAsideFunding > 0) &&
+              renderSubitemRow(
+                'set-aside-funding',
+                'Toward planned expenses',
+                months.map(month => -month.setAsideFunding),
+                'amber',
+              )}
+          </div>
+        )}
 
         {sortedPlannedExpenses.length > 0 && (
           <>
-            <div className="v6-ledger-row v6-ledger-group" style={gridStyle}>
-              <div>Planned expenses</div>
-              {months.map(month => <div key={month.month} className={month.month === currentMonth ? 'is-current' : ''} />)}
+            <div className="v6-ledger-row v6-ledger-group v6-ledger-group--toggle" style={gridStyle}>
+              <div>
+                <LedgerSectionToggle
+                  sectionId="planned"
+                  label="Planned expenses"
+                  expanded={sectionsExpanded.planned}
+                  onToggle={toggleSection}
+                  controlsId="ledger-section-planned"
+                  detailCount={sortedPlannedExpenses.length}
+                />
+              </div>
+              {months.map(month => (
+                <div key={month.month} className={month.month === currentMonth ? 'is-current' : ''} />
+              ))}
             </div>
-            {sortedPlannedExpenses.map(expense => (
+            {sectionsExpanded.planned && (
+              <div id="ledger-section-planned">
+            {sortedPlannedExpenses.map(expense => {
+              const funding = fundingProgressForExpense(expense, payments, recoveries);
+              return (
               <div key={expense.id} className="v6-ledger-row" style={gridStyle}>
                 <div className="v6-ledger-planned-name">
                   <span className="v6-ledger-dot" />
-                  <span>{expense.name}</span>
+                  <span>
+                    {expense.name}
+                    {funding.recoveryOwed > 0 && (
+                      <span className="v6-ledger-planned-meta">
+                        {' '}
+                        · {formatCurrency(funding.recoveryOwed)} recovery owed
+                      </span>
+                    )}
+                  </span>
                   <button
                     type="button"
                     className="v6-ledger-remove-btn"
@@ -675,30 +944,56 @@ function HorizontalLedger({
                     ×
                   </button>
                 </div>
-                {months.map(month => (
+                {months.map(month => {
+                  const cell = plannedExpenseLedgerCell(expense, month.month, payments);
+                  return (
                   <div
                     key={month.month}
                     className={`v6-ledger-value v6-ledger-tone--amber ${month.month === currentMonth ? 'is-current' : ''} ${month.month < currentMonth ? 'is-past' : ''}`}
                   >
-                    {month.month === expense.targetMonth ? (
+                    {cell.kind === 'early-payment' ? (
+                      <span
+                        className="v6-ledger-planned-early"
+                        title={`Early payment for ${expense.name} in ${formatMonth(month.month)}`}
+                      >
+                        -{formatCurrency(cell.amount).replace('€', '')}
+                      </span>
+                    ) : cell.kind === 'target' ? (
                       <button
                         type="button"
                         className="v6-ledger-planned-cell-btn"
                         onClick={() => setEditingExpense({ expense, initialFocus: 'amount' })}
                         onDoubleClick={() => setEditingExpense({ expense, initialFocus: 'amount' })}
                         aria-label={`Edit amount for ${expense.name} in ${formatMonth(month.month)}`}
-                        title={`Edit amount for ${expense.name} in ${formatMonth(month.month)}`}
+                        title={`Planned amount due in ${formatMonth(month.month)}`}
                       >
-                        -{formatCurrency(expense.amount).replace('€', '')}
+                        -{formatCurrency(cell.amount).replace('€', '')}
                       </button>
                     ) : (
                       '·'
                     )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
-            ))}
+              );
+            })}
+              </div>
+            )}
           </>
+        )}
+
+        {renderGroupRow('Answer')}
+        {renderSummaryRow(
+          'Free to spend',
+          months.map(month => month.freeBudget),
+          'peri',
+          { highlight: true },
+        )}
+        {renderSummaryRow(
+          'Pot balance end',
+          months.map(month => month.potAfter),
+          'ink',
         )}
       </div>
 

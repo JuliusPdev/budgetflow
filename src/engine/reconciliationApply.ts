@@ -1,4 +1,4 @@
-import type { BudgetState, Month, SurplusDestination } from './types';
+import type { BudgetState, Month, PlannedExpenseRecovery, SurplusDestination } from './types';
 import { addMonths } from './smoothing';
 import type {
   ConfirmedTransaction,
@@ -9,6 +9,28 @@ import type {
   ReconciliationSummary,
 } from './csvImportTypes';
 import { buildCarryAdjustments, mergeCarryAdjustments } from './carryForward';
+import {
+  recoveriesFromLockInAmount,
+  recoveryOwedForExpense,
+  recoveryRepaidForExpense,
+} from './plannedExpenseRecovery';
+
+function bookLockInRecoveries(
+  budget: BudgetState,
+  month: Month,
+  amount: number,
+): PlannedExpenseRecovery[] {
+  const existing = budget.plannedExpenseRecoveries ?? [];
+  if (amount <= 0) return existing;
+  const booked = recoveriesFromLockInAmount(
+    amount,
+    month,
+    budget.plannedExpenses,
+    budget.plannedExpensePayments ?? [],
+    existing,
+  );
+  return [...existing, ...booked];
+}
 
 function sumSetAsideTransfers(confirmed: ConfirmedTransaction[]): number {
   const transfers = confirmed.filter(c => c.confirmedCategory === 'set-aside-transfer');
@@ -96,12 +118,16 @@ export function computeReconciliationSummary(
       const expense = budget.plannedExpenses.find(e => e.id === expenseId);
       if (!expense) return null;
       if (expense.targetMonth <= month) return null;
+      const payments = budget.plannedExpensePayments ?? [];
+      const recoveries = budget.plannedExpenseRecoveries ?? [];
       return {
         id: expense.id,
         name: expense.name,
         planned: expense.amount,
         targetMonth: expense.targetMonth,
         actual,
+        recoveryOwed: recoveryOwedForExpense(expense.id, payments, recoveries),
+        recoveryRepaid: recoveryRepaidForExpense(expense.id, recoveries),
       };
     })
     .filter((e): e is {
@@ -110,6 +136,8 @@ export function computeReconciliationSummary(
       planned: number;
       targetMonth: Month;
       actual: number;
+      recoveryOwed: number;
+      recoveryRepaid: number;
     } => e !== null);
 
   const settledExpenses = [...settlementAmounts.entries()]
@@ -297,7 +325,7 @@ export function applyReconciliation(
     });
   }
 
-  // Pot transfer → confirmed lock-in
+  // Pot transfer → confirmed lock-in (+ recovery slice if repaying an early advance)
   if (summary.potTransferAmount > 0) {
     next.lockIns.push({
       id: crypto.randomUUID(),
@@ -305,6 +333,11 @@ export function applyReconciliation(
       lockedAmount: summary.potTransferAmount,
       lockState: 'confirmed',
     });
+    next.plannedExpenseRecoveries = bookLockInRecoveries(
+      next,
+      month,
+      summary.potTransferAmount,
+    );
   }
 
   // Savings contributions (target mode only)
@@ -417,6 +450,11 @@ export function applyReconciliation(
           lockState: 'confirmed',
         });
       }
+      next.plannedExpenseRecoveries = bookLockInRecoveries(
+        next,
+        month,
+        input.leftoverFreeBudget,
+      );
     } else if (input.leftoverAllocation === 'savings' && input.leftoverSavingsGoalId) {
       next.savingsGoals = next.savingsGoals.map(g =>
         g.id === input.leftoverSavingsGoalId && g.mode === 'target'

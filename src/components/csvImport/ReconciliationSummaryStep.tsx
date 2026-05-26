@@ -41,7 +41,7 @@ function MonthSummaryBlock({
             </dd>
           </div>
         ))}
-        <dt>Pot transfer</dt>
+        <dt>Pot Transfer (Set aside)</dt>
         <dd className="num">
           {summary.potTransferConfirmed
             ? formatCurrencyExact(summary.potTransferAmount)
@@ -49,6 +49,24 @@ function MonthSummaryBlock({
         </dd>
         <dt>Free budget spend</dt>
         <dd className="num">{formatCurrencyExact(summary.freeBudgetSpendTotal)}</dd>
+        {summary.plannedExpensePayments.map(p => (
+          <div key={p.id} className="csv-summary-block">
+            <dt>{p.name} (early payment)</dt>
+            <dd className="num">
+              Plan {formatCurrency(p.planned)} · Paid {formatCurrencyExact(p.actual)}
+              {p.recoveryOwed > 0 && (
+                <> · Recovery owed {formatCurrency(p.recoveryOwed)}</>
+              )}
+              {p.recoveryRepaid > 0 && (
+                <> · Recovered {formatCurrency(p.recoveryRepaid)}</>
+              )}
+            </dd>
+            <dd className="csv-summary-hint">
+              Monthly set-aside stays based on the full plan ({formatCurrency(p.planned)}), not the
+              remaining cash to pay.
+            </dd>
+          </div>
+        ))}
         {summary.settledExpenses
           .filter(s => s.actual < s.planned)
           .map(s => (

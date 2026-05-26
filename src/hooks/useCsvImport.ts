@@ -40,6 +40,10 @@ import {
   loadLastSettleMeta,
 } from '../utils/importStorage';
 import { addMonths } from '../engine/smoothing';
+import {
+  reviewBuildKey,
+  subAccountMappingsEqual,
+} from '../engine/reviewBuildKey';
 
 export type WizardStep =
   | 'file'
@@ -75,6 +79,7 @@ export function useCsvImport({
     loadSubAccountMappings(),
   );
   const [transactions, setTransactions] = useState<ReviewableTransaction[]>([]);
+  const [lastReviewBuildKey, setLastReviewBuildKey] = useState<string | null>(null);
   const [summariesByMonth, setSummariesByMonth] = useState<
     Record<Month, ReconciliationSummary>
   >({});
@@ -111,6 +116,7 @@ export function useCsvImport({
     setOverlapCount(0);
     setMappings(loadSubAccountMappings());
     setTransactions([]);
+    setLastReviewBuildKey(null);
     setSummariesByMonth({});
     setAffectedMonths([]);
     setEnvelopeDecisions([]);
@@ -165,8 +171,20 @@ export function useCsvImport({
       if (allRows.length > 0) {
         applyPeriodFilter(allRows, start, end);
       }
+      // Period draft only updates dates/filtered rows; review allocations stay until Continue.
     },
     [allRows, applyPeriodFilter],
+  );
+
+  const rebuildReviewTransactions = useCallback(
+    (filtered: ParsedCsvRow[], map: SubAccountMappings, start: string, end: string) => {
+      const prior = loadAllPriorConfirmed();
+      setTransactions(
+        buildReviewableTransactions(filtered, map, budget, currentMonth, prior),
+      );
+      setLastReviewBuildKey(reviewBuildKey(start, end, filtered, map));
+    },
+    [budget, currentMonth],
   );
 
   const selectPeriod = useCallback(
@@ -184,14 +202,22 @@ export function useCsvImport({
         setStep('mapping');
       } else {
         setSkippedMapping(true);
-        const prior = loadAllPriorConfirmed();
-        setTransactions(
-          buildReviewableTransactions(filtered, known, budget, currentMonth, prior),
-        );
-        setStep('review');
+        const key = reviewBuildKey(start, end, filtered, known);
+        if (key === lastReviewBuildKey && transactions.length > 0) {
+          setStep('review');
+        } else {
+          rebuildReviewTransactions(filtered, known, start, end);
+          setStep('review');
+        }
       }
     },
-    [allRows, budget, currentMonth, applyPeriodFilter],
+    [
+      allRows,
+      applyPeriodFilter,
+      lastReviewBuildKey,
+      transactions.length,
+      rebuildReviewTransactions,
+    ],
   );
 
   const goBack = useCallback(() => {
@@ -236,15 +262,30 @@ export function useCsvImport({
 
   const saveMappings = useCallback(
     (next: SubAccountMappings) => {
+      const key = reviewBuildKey(periodStart, periodEnd, periodRows, next);
+      const mappingsUnchanged = subAccountMappingsEqual(next, mappings);
+      if (
+        mappingsUnchanged &&
+        key === lastReviewBuildKey &&
+        transactions.length > 0
+      ) {
+        setStep('review');
+        return;
+      }
       setMappings(next);
       saveSubAccountMappings(next);
-      const prior = loadAllPriorConfirmed();
-      setTransactions(
-        buildReviewableTransactions(periodRows, next, budget, currentMonth, prior),
-      );
+      rebuildReviewTransactions(periodRows, next, periodStart, periodEnd);
       setStep('review');
     },
-    [periodRows, budget, currentMonth],
+    [
+      periodRows,
+      periodStart,
+      periodEnd,
+      mappings,
+      lastReviewBuildKey,
+      transactions.length,
+      rebuildReviewTransactions,
+    ],
   );
 
   const updateRowCategory = useCallback(

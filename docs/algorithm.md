@@ -126,6 +126,43 @@ If your implementation doesn't produce these exact results, the algorithm is wro
 
 ---
 
+## Financial baseline (no bank API)
+
+When the user cannot connect a bank, they may enter a **financial baseline** in onboarding or Settings:
+
+| Field | Effect |
+|-------|--------|
+| `checkingBalance` | Anchors current-month free budget: `max(theoretical, checking − freeSpent)` |
+| `potBalance` | Seeds pot carry (minus this month's lock-ins to avoid double-counting) |
+| `setAsideTransferredThisMonth` | Creates a planned lock-in for the baseline month |
+| `incomeReceivedThisMonth` | Overrides income for that month via `incomeByMonth` |
+| `fixedPaidThisMonth` | Reduces theoretical available for the baseline month |
+| `freeSpentThisMonth` | Reduces the checking anchor |
+
+Baseline applies only when `financialBaseline.asOfMonth === currentMonth`. If the calendar month moves on, the UI prompts an update; stale baselines do not inflate free budget.
+
+---
+
+## Early planned-expense payments (payback model)
+
+When you pay toward a planned expense **before** its target month, the engine does **not** lower future set-aside rates. The monthly rate is still computed from the **full planned amount** in the funding window.
+
+Each early payment splits into:
+
+- **Pot portion** (`potDeduction`): money already saved in the pot. No payback — it reduced the physical pot when paid.
+- **Free-budget portion** (`amount - potDeduction`): money spent from checking that was not in the pot. This creates **recovery owed**.
+
+Each month’s recommended set-aside is split:
+
+1. **Recovery slice** — repays free-budget advances (does not increase the pot).
+2. **Funding slice** — saves toward the planned expense (increases the pot toward the target month).
+
+Only the funding slice participates in pot simulation. While recovery is owed, displayed set-aside rates stay on the first-pass schedule (full plan amount); they are not recomputed from a lower “remaining to fund” figure.
+
+**Example:** Trip €800 due in 4 months → ~€200/mo set-aside. Pay €400 early (€200 pot + €200 free budget). Recovery owed = €200. Set-aside stays ~€200/mo; June might allocate €200 recovery then funding slices in later months until recovery is complete.
+
+---
+
 ## Edge Cases
 
 - **Expense in current month**: No smoothing. Full amount deducted from free budget directly.

@@ -1,7 +1,8 @@
 import { useState, useRef } from 'react';
 import { runEngine } from '../engine/smoothing';
 import { formatCurrency, getCurrentMonth } from '../utils/formatting';
-import type { BudgetState, FixedExpense, Month, SavingsGoal } from '../engine/types';
+import { applyFinancialBaselineEffects } from '../engine/financialBaseline';
+import type { BudgetState, FinancialBaseline, FixedExpense, Month, SavingsGoal } from '../engine/types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -10,7 +11,7 @@ interface Props {
   onImport:  (budget: BudgetState) => void;
 }
 
-type Step = 'start' | 'income' | 'fixed' | 'savings' | 'summary';
+type Step = 'start' | 'income' | 'fixed' | 'savings' | 'baseline' | 'summary';
 
 // A savings goal being drafted — same shape as SavingsGoal but without `id`
 // and with amounts as strings (because they come from <input> elements).
@@ -72,6 +73,15 @@ export default function Onboarding({ onComplete, onImport }: Props) {
   // ── Savings goal form (step 3) ──
   const [goalDraft, setGoalDraft] = useState<GoalDraft | null>(null);
 
+  // ── Financial baseline (step 4) ──
+  const [checkingStr, setCheckingStr] = useState('');
+  const [potStr, setPotStr] = useState('');
+  const [setAsideStr, setSetAsideStr] = useState('');
+  const [baselineAdvancedOpen, setBaselineAdvancedOpen] = useState(false);
+  const [incomeReceivedStr, setIncomeReceivedStr] = useState('');
+  const [fixedPaidStr, setFixedPaidStr] = useState('');
+  const [freeSpentStr, setFreeSpentStr] = useState('');
+
   // ── Import ──
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -80,6 +90,23 @@ export default function Onboarding({ onComplete, onImport }: Props) {
   const fixedTotal = fixedExpenses.reduce((s, e) => s + e.amount, 0);
 
   // Run the engine on the draft budget to show the baseline free budget on step 4.
+  function buildBaseline(): FinancialBaseline {
+    const baseline: FinancialBaseline = {
+      asOfMonth: currentMonth,
+      checkingBalance: parseFloat(checkingStr) || 0,
+      potBalance: parseFloat(potStr) || 0,
+    };
+    const setAside = parseFloat(setAsideStr);
+    if (setAside > 0) baseline.setAsideTransferredThisMonth = setAside;
+    const incomeReceived = parseFloat(incomeReceivedStr);
+    if (incomeReceived > 0) baseline.incomeReceivedThisMonth = incomeReceived;
+    const fixedPaid = parseFloat(fixedPaidStr);
+    if (fixedPaid > 0) baseline.fixedPaidThisMonth = fixedPaid;
+    const freeSpent = parseFloat(freeSpentStr);
+    if (freeSpent > 0) baseline.freeSpentThisMonth = freeSpent;
+    return baseline;
+  }
+
   const draftBudget: BudgetState = {
     income: incomeNum,
     fixedExpenses,
@@ -93,9 +120,13 @@ export default function Onboarding({ onComplete, onImport }: Props) {
     reconciledMonths: [],
     monthCarryAdjustments: [],
     incomeByMonth: {},
+    financialBaseline: buildBaseline(),
   };
-  const engineResult = runEngine(draftBudget, currentMonth);
-  const baselineFreeBudget = engineResult.months.find(m => m.month === currentMonth)?.freeBudget ?? 0;
+  const previewBudget = applyFinancialBaselineEffects(draftBudget, buildBaseline());
+  const engineResult = runEngine(previewBudget, currentMonth);
+  const currentResult = engineResult.months.find(m => m.month === currentMonth);
+  const baselineFreeBudget = currentResult?.freeBudget ?? 0;
+  const theoreticalFreeBudget = currentResult?.freeBudgetTheoretical ?? baselineFreeBudget;
 
   // ── Fixed expense helpers ──
 
@@ -186,6 +217,8 @@ export default function Onboarding({ onComplete, onImport }: Props) {
       plannedExpenseSettlements: [],
       reconciledMonths: [],
       monthCarryAdjustments: [],
+      incomeByMonth: {},
+      financialBaseline: buildBaseline(),
     });
   }
 
@@ -502,7 +535,7 @@ export default function Onboarding({ onComplete, onImport }: Props) {
 
             <div className="ob-nav">
               <button className="btn btn-ghost" onClick={() => setStep('fixed')}>← Back</button>
-              <button className="btn btn-primary" onClick={() => setStep('summary')}>
+              <button className="btn btn-primary" onClick={() => setStep('baseline')}>
                 {savingsGoals.length === 0 ? 'Skip →' : 'Done →'}
               </button>
             </div>
@@ -510,11 +543,125 @@ export default function Onboarding({ onComplete, onImport }: Props) {
         </div>
       )}
 
-      {/* ── Step 4: Summary ──────────────────────────────────────────────────── */}
+      {/* ── Step 4: Where you are today ─────────────────────────────────────── */}
+      {step === 'baseline' && (
+        <div className="ob-screen">
+          <div className="ob-content">
+            <p className="ob-step-label">Step 4 of 5</p>
+            <h2 className="ob-question">Where are you today?</h2>
+            <p className="ob-hint">
+              We can&apos;t connect to your bank automatically. These numbers anchor your first month.
+              You can update them in Settings or refine them when you import a CSV.
+            </p>
+
+            <div className="ob-baseline-form card">
+              <div className="input-group">
+                <label className="input-label">Checking account balance now</label>
+                <div className="input-prefix">
+                  <input
+                    className="input"
+                    type="number"
+                    min="0"
+                    placeholder="e.g. 1500"
+                    value={checkingStr}
+                    onChange={e => setCheckingStr(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="input-group">
+                <label className="input-label">Pot / savings sub-account balance now</label>
+                <div className="input-prefix">
+                  <input
+                    className="input"
+                    type="number"
+                    min="0"
+                    placeholder="e.g. 600"
+                    value={potStr}
+                    onChange={e => setPotStr(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="input-group">
+                <label className="input-label">Already moved to pot this month (optional)</label>
+                <div className="input-prefix">
+                  <input
+                    className="input"
+                    type="number"
+                    min="0"
+                    placeholder="0"
+                    value={setAsideStr}
+                    onChange={e => setSetAsideStr(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <button
+                type="button"
+                className="ob-baseline-advanced-toggle"
+                onClick={() => setBaselineAdvancedOpen(v => !v)}
+                aria-expanded={baselineAdvancedOpen}
+              >
+                {baselineAdvancedOpen ? 'Hide' : 'Show'} advanced (mid-month details)
+              </button>
+
+              {baselineAdvancedOpen && (
+                <div className="ob-baseline-advanced">
+                  <div className="input-group">
+                    <label className="input-label">Income already received this month</label>
+                    <div className="input-prefix">
+                      <input
+                        className="input"
+                        type="number"
+                        min="0"
+                        placeholder={String(incomeNum || '')}
+                        value={incomeReceivedStr}
+                        onChange={e => setIncomeReceivedStr(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div className="input-group">
+                    <label className="input-label">Fixed expenses already paid from checking</label>
+                    <div className="input-prefix">
+                      <input
+                        className="input"
+                        type="number"
+                        min="0"
+                        placeholder="0"
+                        value={fixedPaidStr}
+                        onChange={e => setFixedPaidStr(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div className="input-group">
+                    <label className="input-label">Free budget already spent this month</label>
+                    <div className="input-prefix">
+                      <input
+                        className="input"
+                        type="number"
+                        min="0"
+                        placeholder="0"
+                        value={freeSpentStr}
+                        onChange={e => setFreeSpentStr(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="ob-nav">
+              <button className="btn btn-ghost" onClick={() => setStep('savings')}>← Back</button>
+              <button className="btn btn-primary" onClick={() => setStep('summary')}>Continue →</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Step 5: Summary ──────────────────────────────────────────────────── */}
       {step === 'summary' && (
         <div className="ob-screen">
           <div className="ob-content">
-            <p className="ob-step-label">Step 4 of 4</p>
+            <p className="ob-step-label">Step 5 of 5</p>
             <h2 className="ob-question">Your baseline free budget</h2>
 
             <div className="ob-summary card">
@@ -536,26 +683,45 @@ export default function Onboarding({ onComplete, onImport }: Props) {
                   </span>
                 </div>
               )}
+              {(parseFloat(checkingStr) > 0 || parseFloat(potStr) > 0) && (
+                <>
+                  <div className="ob-summary-row">
+                    <span>Checking on hand</span>
+                    <span className="num">{formatCurrency(parseFloat(checkingStr) || 0)}</span>
+                  </div>
+                  <div className="ob-summary-row">
+                    <span>Pot on hand</span>
+                    <span className="num">{formatCurrency(parseFloat(potStr) || 0)}</span>
+                  </div>
+                </>
+              )}
               <hr className="divider" />
+              {currentResult?.freeBudgetAnchored !== undefined &&
+                Math.abs(theoreticalFreeBudget - baselineFreeBudget) > 1 && (
+                <div className="ob-summary-row">
+                  <span>Plan formula (monthly)</span>
+                  <span className="num">{formatCurrency(theoreticalFreeBudget)}</span>
+                </div>
+              )}
               <div className="ob-summary-row ob-summary-row--total">
-                <span>Free budget</span>
+                <span>Free budget (anchored)</span>
                 <span className={`num ${
                   baselineFreeBudget > 300 ? 'healthy' :
                   baselineFreeBudget > 150 ? 'tight' : 'critical'
                 }`}>
-                  {formatCurrency(baselineFreeBudget)}/mo
+                  {formatCurrency(baselineFreeBudget)}
                 </span>
               </div>
             </div>
 
             <p className="ob-hint" style={{ textAlign: 'center' }}>
               {baselineFreeBudget > 0
-                ? 'This is yours to spend freely — before any planned expenses.'
+                ? 'Uses your checking balance when that gives a clearer picture than the monthly formula alone.'
                 : 'Your expenses exceed your income. You can adjust everything in settings.'}
             </p>
 
             <div className="ob-nav">
-              <button className="btn btn-ghost" onClick={() => setStep('savings')}>← Back</button>
+              <button className="btn btn-ghost" onClick={() => setStep('baseline')}>← Back</button>
               <button className="btn btn-primary" onClick={finish}>Let's go →</button>
             </div>
           </div>

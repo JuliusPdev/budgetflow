@@ -84,3 +84,15 @@ Display: "€Z/month for [M] months. Nothing additional this month."
 The engine already handles the pot carry-forward logic. The only new thing here is: when Option 2 is chosen, treat the current month's locked amount as fixed and distribute only across future months.
 
 Explain how you're calculating the two options and how Option 2 interacts with the engine.
+
+---
+
+## Early planned-expense payback (implemented)
+
+**User-facing invariant:** Paying early does **not** lower your monthly set-aside plan unless you edit the planned expense amount.
+
+- Set-aside rate is based on the **full** planned amount over the funding window.
+- Early payments from the **pot** need no payback.
+- Early payments from **free budget** create **recovery owed**, repaid through future set-aside **recovery** slices before **funding** slices.
+- UI shows recovery vs funding on set-aside rows and “recovery owed” on planned expense progress (not on the rate).
+- CSV reconciliation summary shows plan amount unchanged, amount paid, and recovery owed/repaid.

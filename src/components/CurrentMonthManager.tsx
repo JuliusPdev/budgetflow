@@ -1,6 +1,7 @@
 import { useState, Fragment } from 'react';
 import { Check, ChevronDown, ChevronRight } from 'lucide-react';
 import { formatCurrency, formatMonth } from '../utils/formatting';
+import { fundingProgressForExpense } from '../engine/plannedExpenseRecovery';
 import type {
   BudgetState,
   Month,
@@ -161,7 +162,12 @@ export default function CurrentMonthManager({
             {plannedExpanded && result.plannedExpenses.map(expense => {
               const settlement = getSettlement(expense.id);
               const paidTowardExpense = getPaidTowardPlanned(expense.id);
-              const remainingAmount = Math.max(0, expense.amount - paidTowardExpense);
+              const funding = fundingProgressForExpense(
+                expense,
+                budget.plannedExpensePayments ?? [],
+                budget.plannedExpenseRecoveries ?? [],
+              );
+              const remainingToFund = Math.max(0, expense.amount - funding.fundedProgress);
 
               if (settlement) {
                 const isOverspent = settlement.actualAmount > expense.amount;
@@ -188,10 +194,15 @@ export default function CurrentMonthManager({
                         {' '}· {formatCurrency(paidTowardExpense)} already paid
                       </span>
                     )}
+                    {funding.recoveryOwed > 0 && (
+                      <span className="mc-detail-budget-original">
+                        {' '}· {formatCurrency(funding.recoveryOwed)} recovery owed
+                      </span>
+                    )}
                   </span>
                   <div className="cmm-row-end">
                     <span className="cmm-detail-amount irregular num">
-                      {formatCurrency(remainingAmount)}
+                      {formatCurrency(remainingToFund)}
                       {paidTowardExpense > 0 && (
                         <span className="mc-detail-budget-original"> / {formatCurrency(expense.amount)}</span>
                       )}

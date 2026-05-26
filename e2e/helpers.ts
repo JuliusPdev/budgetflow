@@ -68,6 +68,11 @@ export async function completeOnboarding(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Add goal' }).click();
   await page.getByRole('button', { name: 'Done →' }).click();
 
+  await expect(page.getByRole('heading', { name: 'Where are you today?' })).toBeVisible();
+  await page.locator('.ob-baseline-form input').first().fill('1200');
+  await page.locator('.ob-baseline-form input').nth(1).fill('0');
+  await page.getByRole('button', { name: 'Continue →' }).click();
+
   await expect(page.getByRole('heading', { name: 'Your baseline free budget' })).toBeVisible();
   const freeBudgetText = await page.locator('.ob-summary-row--total .num').textContent();
   const freeBudgetValue = parseInt(freeBudgetText?.replace(/[^\d]/g, '') ?? '0', 10);

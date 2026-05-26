@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { runEngine } from './smoothing';
+import { resolveFundingStartMonth, runEngine } from './smoothing';
 import type { BudgetState, PlannedExpense } from './types';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -444,7 +444,7 @@ describe('Carry-forward free budget displays as income carryover', () => {
   });
 });
 
-describe('Planned expense payments reduce the remaining amount to fund', () => {
+describe('Early payment does not reduce set-aside rate (full plan amount)', () => {
   const state: BudgetState = {
     income: 1000,
     fixedExpenses: [],
@@ -456,6 +456,7 @@ describe('Planned expense payments reduce the remaining amount to fund', () => {
         targetMonth: '2026-03',
         category: 'travel',
         confidence: 'confirmed',
+        fundingStartMonth: '2026-02',
       },
     ],
     savingsGoals: [],
@@ -480,9 +481,15 @@ describe('Planned expense payments reduce the remaining amount to fund', () => {
 
   const result = runEngine(state, '2026-02');
 
-  it('only smooths the unpaid remainder across future months', () => {
-    expect(r(find(result.months, '2026-02').setAsideRecommended)).toBe(250);
-    expect(r(find(result.months, '2026-03').setAsideRecommended)).toBe(250);
+  it('smooths the full planned amount across future months', () => {
+    expect(r(find(result.months, '2026-02').setAsideRecommended)).toBe(500);
+    expect(r(find(result.months, '2026-03').setAsideRecommended)).toBe(500);
+  });
+
+  it('allocates no recovery when early payment came entirely from pot', () => {
+    const feb = find(result.months, '2026-02');
+    expect(feb.setAsideRecovery).toBe(0);
+    expect(feb.setAsideFunding).toBe(500);
   });
 
   it('still ends the pot at zero after the target month', () => {
@@ -506,6 +513,7 @@ describe('Physical pot display ignores unreconciled past planned expenses', () =
         targetMonth: '2026-02',
         category: 'travel',
         confidence: 'confirmed',
+        fundingStartMonth: '2026-03',
       },
     ],
     savingsGoals: [],
@@ -553,7 +561,7 @@ describe('Physical pot display ignores unreconciled past planned expenses', () =
   });
 });
 
-describe('May early Trip payment reduces future set-aside amounts', () => {
+describe('May early Trip payment keeps set-aside rate and splits recovery', () => {
   const state: BudgetState = {
     income: 1000,
     fixedExpenses: [],
@@ -565,6 +573,7 @@ describe('May early Trip payment reduces future set-aside amounts', () => {
         targetMonth: '2026-08',
         category: 'travel',
         confidence: 'confirmed',
+        fundingStartMonth: '2026-06',
       },
     ],
     savingsGoals: [],
@@ -598,10 +607,16 @@ describe('May early Trip payment reduces future set-aside amounts', () => {
 
   const result = runEngine(state, '2026-06');
 
-  it('smooths only the remaining €1000 over June through August', () => {
+  it('smooths the full €2000 over June through August', () => {
     for (const month of ['2026-06', '2026-07', '2026-08']) {
-      expect(r(find(result.months, month).setAsideRecommended)).toBe(333.33);
+      expect(r(find(result.months, month).setAsideRecommended)).toBe(666.67);
     }
+  });
+
+  it('allocates set-aside to recovery until free-budget advance is repaid', () => {
+    const june = find(result.months, '2026-06');
+    expect(june.setAsideRecovery).toBe(500);
+    expect(r(june.setAsideFunding)).toBe(166.67);
   });
 
   it('shows the May free-budget portion as past spending linked to the Trip', () => {
@@ -611,5 +626,183 @@ describe('May early Trip payment reduces future set-aside amounts', () => {
       name: 'Trip early payment',
       linkedPlannedExpenseId: 'trip',
     });
+  });
+});
+
+describe('Trip €800 early pay: rate stays ~€200 after May recovery repaid', () => {
+  const state: BudgetState = {
+    income: 3500,
+    fixedExpenses: [],
+    plannedExpenses: [
+      {
+        id: 'trip',
+        name: 'Trip',
+        amount: 800,
+        targetMonth: '2026-09',
+        category: 'travel',
+        confidence: 'confirmed',
+      },
+    ],
+    savingsGoals: [],
+    lockIns: [
+      { id: 'may-manual', month: '2026-05', lockedAmount: 200, lockState: 'confirmed' },
+      { id: 'may-csv', month: '2026-05', lockedAmount: 200, lockState: 'confirmed' },
+    ],
+    unplannedExpenses: [
+      {
+        id: 'trip-free',
+        name: 'Trip early payment',
+        amount: 200,
+        month: '2026-05',
+        category: 'travel',
+        linkedPlannedExpenseId: 'trip',
+      },
+    ],
+    envelopeActualizations: [],
+    plannedExpensePayments: [
+      {
+        id: 'trip-pay',
+        plannedExpenseId: 'trip',
+        month: '2026-05',
+        amount: 400,
+        potDeduction: 200,
+      },
+    ],
+    plannedExpenseRecoveries: [
+      {
+        id: 'may-recovery',
+        plannedExpenseId: 'trip',
+        month: '2026-05',
+        amount: 200,
+      },
+    ],
+    plannedExpenseSettlements: [],
+    reconciledMonths: ['2026-05'],
+    monthCarryAdjustments: [],
+  };
+
+  const result = runEngine(state, '2026-06');
+
+  it('does not jump to ~€267 when recovery is already repaid', () => {
+    const rates = ['2026-06', '2026-07', '2026-08', '2026-09'].map(
+      month => r(find(result.months, month).setAsideRecommended),
+    );
+    for (const recommended of rates) {
+      expect(recommended).not.toBe(267);
+    }
+    expect(new Set(rates).size).toBe(1);
+  });
+
+  it('funds only (no recovery slice) once May repaid the free-budget advance', () => {
+    const june = find(result.months, '2026-06');
+    expect(june.setAsideRecovery).toBe(0);
+    expect(r(june.setAsideFunding)).toBe(june.setAsideRecommended);
+  });
+});
+
+describe('Anchored funding window: August target from May start', () => {
+  const state: BudgetState = {
+    income: 3500,
+    fixedExpenses: [],
+    plannedExpenses: [
+      {
+        id: 'trip',
+        name: 'Trip',
+        amount: 800,
+        targetMonth: '2026-08',
+        category: 'travel',
+        confidence: 'confirmed',
+        fundingStartMonth: '2026-05',
+      },
+    ],
+    savingsGoals: [],
+    lockIns: [
+      { id: 'may-lock', month: '2026-05', lockedAmount: 200, lockState: 'confirmed' },
+    ],
+    unplannedExpenses: [
+      {
+        id: 'trip-free',
+        name: 'Trip early payment',
+        amount: 200,
+        month: '2026-05',
+        category: 'travel',
+        linkedPlannedExpenseId: 'trip',
+      },
+    ],
+    envelopeActualizations: [],
+    plannedExpensePayments: [
+      {
+        id: 'trip-pay',
+        plannedExpenseId: 'trip',
+        month: '2026-05',
+        amount: 400,
+        potDeduction: 200,
+      },
+    ],
+    plannedExpenseRecoveries: [
+      {
+        id: 'may-recovery',
+        plannedExpenseId: 'trip',
+        month: '2026-05',
+        amount: 200,
+      },
+    ],
+    plannedExpenseSettlements: [],
+    reconciledMonths: ['2026-05'],
+    monthCarryAdjustments: [],
+  };
+
+  const result = runEngine(state, '2026-06');
+
+  it('keeps ~€200/mo in June–August (not €267 from a 3-month window)', () => {
+    const rates = ['2026-06', '2026-07', '2026-08'].map(
+      month => r(find(result.months, month).setAsideRecommended),
+    );
+    for (const recommended of rates) {
+      expect(recommended).not.toBe(267);
+      expect(recommended).toBeGreaterThan(180);
+      expect(recommended).toBeLessThan(220);
+    }
+    expect(new Set(rates).size).toBe(1);
+  });
+});
+
+describe('resolveFundingStartMonth', () => {
+  it('backfills from earliest payment when fundingStartMonth is missing', () => {
+    const expense = {
+      id: 'trip',
+      name: 'Trip',
+      amount: 800,
+      targetMonth: '2026-08',
+      category: 'travel',
+      confidence: 'confirmed' as const,
+    };
+    const budget: Pick<BudgetState, 'lockIns' | 'plannedExpensePayments'> = {
+      lockIns: [],
+      plannedExpensePayments: [
+        {
+          id: 'p1',
+          plannedExpenseId: 'trip',
+          month: '2026-05',
+          amount: 400,
+          potDeduction: 200,
+        },
+      ],
+    };
+    expect(resolveFundingStartMonth(expense, budget, '2026-06')).toBe('2026-05');
+  });
+
+  it('falls back to current month when no payment exists', () => {
+    const expense = {
+      id: 'trip',
+      name: 'Trip',
+      amount: 800,
+      targetMonth: '2026-08',
+      category: 'travel',
+      confidence: 'confirmed' as const,
+    };
+    expect(resolveFundingStartMonth(expense, { lockIns: [], plannedExpensePayments: [] }, '2026-06')).toBe(
+      '2026-06',
+    );
   });
 });

@@ -1,6 +1,7 @@
 import { useState, Fragment } from 'react';
 import { Check, X } from 'lucide-react';
 import { runEngine, addMonths } from '../engine/smoothing';
+import { fundingProgressForExpense } from '../engine/plannedExpenseRecovery';
 import { formatCurrency, formatMonth } from '../utils/formatting';
 import type {
   BudgetState,
@@ -416,6 +417,24 @@ export default function MonthCard({
               <span className="mc-detail-amount num">{formatCurrency(toSetAside)}</span>
             </div>
           )}
+          {result.setAsideRecovery > 0 && (
+            <div className="mc-row mc-row--detail">
+              <span className="mc-detail-name">Recovering advance</span>
+              <span className="mc-detail-amount num">{formatCurrency(result.setAsideRecovery)}</span>
+            </div>
+          )}
+          {result.setAsideFunding > 0 && result.setAsideRecovery > 0 && (
+            <div className="mc-row mc-row--detail">
+              <span className="mc-detail-name">Toward planned expenses</span>
+              <span className="mc-detail-amount num">{formatCurrency(result.setAsideFunding)}</span>
+            </div>
+          )}
+          {result.plannedExpenseRecoverySlices?.map(slice => (
+            <div key={slice.plannedExpenseId} className="mc-row mc-row--detail">
+              <span className="mc-detail-name">{slice.expenseName} recovery</span>
+              <span className="mc-detail-amount num">{formatCurrency(slice.amount)}</span>
+            </div>
+          ))}
         </div>
       )}
 
@@ -431,7 +450,12 @@ export default function MonthCard({
         {/* Each planned expense for this month */}
         {result.plannedExpenses.map(expense => {
           const paidTowardExpense = getPaidTowardPlanned(expense.id);
-          const remainingAmount = Math.max(0, expense.amount - paidTowardExpense);
+          const funding = fundingProgressForExpense(
+            expense,
+            budget.plannedExpensePayments ?? [],
+            budget.plannedExpenseRecoveries ?? [],
+          );
+          const remainingToFund = Math.max(0, expense.amount - funding.fundedProgress);
           const settlement = getSettlement(expense.id);
 
           if (settlement) {
@@ -461,9 +485,14 @@ export default function MonthCard({
                       {' '}· {formatCurrency(paidTowardExpense)} already paid
                     </span>
                   )}
+                  {funding.recoveryOwed > 0 && (
+                    <span className="mc-detail-budget-original">
+                      {' '}· {formatCurrency(funding.recoveryOwed)} recovery owed
+                    </span>
+                  )}
                 </span>
                 <span className="mc-detail-amount irregular num">
-                  {formatCurrency(remainingAmount)}
+                  {formatCurrency(remainingToFund)}
                   {paidTowardExpense > 0 && (
                     <span className="mc-detail-budget-original"> / {formatCurrency(expense.amount)}</span>
                   )}
@@ -483,9 +512,14 @@ export default function MonthCard({
                       {' '}· {formatCurrency(paidTowardExpense)} already paid
                     </span>
                   )}
+                  {funding.recoveryOwed > 0 && (
+                    <span className="mc-detail-budget-original">
+                      {' '}· {formatCurrency(funding.recoveryOwed)} recovery owed
+                    </span>
+                  )}
                 </span>
                 <span className="mc-detail-amount irregular num">
-                  {formatCurrency(remainingAmount)}
+                  {formatCurrency(remainingToFund)}
                   {paidTowardExpense > 0 && (
                     <span className="mc-detail-budget-original"> / {formatCurrency(expense.amount)}</span>
                   )}
@@ -542,9 +576,14 @@ export default function MonthCard({
                     {' '}· {formatCurrency(paidTowardExpense)} already paid
                   </span>
                 )}
+                {funding.recoveryOwed > 0 && (
+                  <span className="mc-detail-budget-original">
+                    {' '}· {formatCurrency(funding.recoveryOwed)} recovery owed
+                  </span>
+                )}
               </span>
               <span className="mc-detail-amount irregular num">
-                {formatCurrency(remainingAmount)}
+                {formatCurrency(remainingToFund)}
                 {paidTowardExpense > 0 && (
                   <span className="mc-detail-budget-original"> / {formatCurrency(expense.amount)}</span>
                 )}

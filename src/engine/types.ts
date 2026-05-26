@@ -36,6 +36,8 @@ export interface PlannedExpense {
   // from the current month's distribution and funds it only from startFromMonth onward.
   // Undefined means "include from the first available month" (the default).
   startFromMonth?: Month;
+  /** First month this expense participates in set-aside smoothing (usually when it was added). */
+  fundingStartMonth?: Month;
 }
 
 // Discriminated union: TypeScript knows which fields are available based on `mode`.
@@ -102,14 +104,23 @@ export interface UnplannedExpense {
 
 // A payment record is created when money is spent toward a planned expense before
 // the expense is finally closed. Example: paying for a flight in June toward a
-// September Trip. amount reduces what remains to fund; potDeduction records how
-// much actually came out of the pot in the payment month.
+// September Trip. potDeduction records how much left the pot; the free-budget
+// portion (amount − potDeduction) must be recovered via future set-asides before
+// it counts toward funding the plan (see PlannedExpenseRecovery).
 export interface PlannedExpensePayment {
   id: string;
   plannedExpenseId: string;
   month: Month;
   amount: number;
   potDeduction: number;
+}
+
+// Set-aside allocated to repay the free-budget portion of an early payment.
+export interface PlannedExpenseRecovery {
+  id: string;
+  plannedExpenseId: string;
+  month: Month;
+  amount: number;
 }
 
 // A settlement record is created when a planned expense's target month arrives and
@@ -141,6 +152,19 @@ export interface MonthCarryAdjustments {
   envelopeBoosts: Record<string, number>;
 }
 
+/** User-stated balances when the app cannot read the bank (onboarding / settings). */
+export interface FinancialBaseline {
+  asOfMonth: Month;
+  /** Cash in main checking account right now. */
+  checkingBalance: number;
+  /** Total cash in pot / savings sub-account right now. */
+  potBalance: number;
+  incomeReceivedThisMonth?: number;
+  fixedPaidThisMonth?: number;
+  freeSpentThisMonth?: number;
+  setAsideTransferredThisMonth?: number;
+}
+
 // ─── Persisted state (written to and read from localStorage) ──────────────────
 
 export interface BudgetState {
@@ -155,9 +179,11 @@ export interface BudgetState {
   unplannedExpenses: UnplannedExpense[];
   envelopeActualizations: EnvelopeActualization[];
   plannedExpensePayments: PlannedExpensePayment[];
+  plannedExpenseRecoveries?: PlannedExpenseRecovery[];
   plannedExpenseSettlements: PlannedExpenseSettlement[];
   reconciledMonths?: Month[];
   monthCarryAdjustments?: MonthCarryAdjustments[];
+  financialBaseline?: FinancialBaseline;
 }
 
 // Full app state: budget data + one undo snapshot.
@@ -189,8 +215,18 @@ export interface MonthResult {
   unplannedTotal: number;                 // sum of those expenses
   incomeCarryover: number;                // free budget carried into this month
   setAsideRecommended: number;            // what the algorithm says to set aside
+  /** Portion of setAsideRecommended repaying early free-budget payments. */
+  setAsideRecovery: number;
+  /** Portion of setAsideRecommended funding planned expenses (goes to pot). */
+  setAsideFunding: number;
+  /** Per-expense recovery slices this month (display). */
+  plannedExpenseRecoverySlices: { plannedExpenseId: string; expenseName: string; amount: number }[];
   setAsideLocked: number;                 // what has actually been transferred (0 for future months)
-  freeBudget: number;                     // A − set-aside − unplanned expenses
+  freeBudget: number;                     // A − set-aside − unplanned expenses (anchored when baseline set)
+  /** Plan formula before checking-balance anchor (current month only). */
+  freeBudgetTheoretical?: number;
+  /** Checking balance anchor when baseline is active (current month only). */
+  freeBudgetAnchored?: number;
   potAfter: number;                       // cumulative pot balance after this month
   physicalPotAfter: number;               // actual locked pot balance, before unfounded planned deductions
   lockStatus: LockStatus;                 // only meaningful for the current month

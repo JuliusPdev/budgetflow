@@ -165,13 +165,12 @@ export default function CsvImportWizard({ csv, budget, engine, currentMonth }: P
     ? csv.summariesByMonth[csv.currentLeftoverMonth]
     : null;
 
-  const canGoBack =
-    csv.step !== 'file' && csv.step !== 'close';
+  const showBack = csv.step !== 'file';
 
   return (
     <div className="modal-overlay csv-wizard-overlay" onClick={csv.closeWizard}>
       <div
-        className="modal modal--csv-wizard"
+        className={`modal modal--csv-wizard${csv.step === 'review' ? ' modal--csv-wizard--spreadsheet' : ''}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="csv-wizard-title"
@@ -201,7 +200,9 @@ export default function CsvImportWizard({ csv, budget, engine, currentMonth }: P
           <strong>Step {stepIndex + 1} / {STEP_ORDER.length}</strong>
         </div>
 
-        <div className="csv-wizard-body">
+        <div
+          className={`csv-wizard-body${csv.step === 'review' ? ' csv-wizard-body--spreadsheet' : ''}`}
+        >
           {csv.step === 'file' && (
             <>
               <ImportFileStep
@@ -236,7 +237,6 @@ export default function CsvImportWizard({ csv, budget, engine, currentMonth }: P
             <TransactionReviewStep
               transactions={csv.transactions}
               budget={budget}
-              currentMonth={currentMonth}
               lockInMonthOptions={csv.lockInMonthOptions}
               onUpdateCategory={csv.updateRowCategory}
               onEditMapping={() => csv.setStep('mapping')}
@@ -290,16 +290,19 @@ export default function CsvImportWizard({ csv, budget, engine, currentMonth }: P
         </div>
 
         {csv.step !== 'close' && (
-          <footer className="csv-wizard-footer">
-            <button
-              type="button"
-              className="btn btn-ghost csv-wizard-footer-back"
-              disabled={!canGoBack}
-              onClick={csv.goBack}
-            >
-              <ChevronLeft size={18} aria-hidden />
-              Back
-            </button>
+          <footer
+            className={`csv-wizard-footer${showBack ? '' : ' csv-wizard-footer--single'}`}
+          >
+            {showBack && (
+              <button
+                type="button"
+                className="btn btn-ghost csv-wizard-footer-back"
+                onClick={csv.goBack}
+              >
+                <ChevronLeft size={18} aria-hidden />
+                Back
+              </button>
+            )}
             <button
               type="button"
               className="btn btn-primary csv-wizard-footer-forward"
