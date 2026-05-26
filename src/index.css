@@ -3030,6 +3030,57 @@ a { color: inherit; }
   color: var(--color-irregular-text);
 }
 
+.v6-ledger-planned-cell-btn--add {
+  border-bottom-style: solid;
+  border-color: var(--border);
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
+.v6-ledger-planned-cell-btn--add:hover,
+.v6-ledger-planned-cell-btn--add:focus-visible {
+  opacity: 1;
+  color: var(--color-irregular-text);
+}
+
+.v6-ledger-planned-early {
+  font-weight: 800;
+  color: var(--color-irregular-text);
+}
+
+.v6-ledger-planned-meta {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.v6-ledger-row--subitem .v6-ledger-subitem-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 18px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.v6-ledger-add-row--income .v6-ledger-add-label {
+  display: flex;
+  align-items: center;
+  padding-left: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.v6-ledger-add-row--income .v6-ledger-add-btn {
+  opacity: 0.55;
+}
+
+.v6-ledger-add-row--income:hover .v6-ledger-add-btn,
+.v6-ledger-add-row--income:focus-within .v6-ledger-add-btn {
+  opacity: 1;
+}
+
 .v6-ledger-dot {
   width: 6px;
   height: 6px;

@@ -1,6 +1,11 @@
 import { useState, useMemo, useEffect } from 'react';
 import { runEngine } from '../engine/smoothing';
 import { loadState, saveState } from '../utils/storage';
+import {
+  backfillRecoveriesFromLockIns,
+  recoveriesFromLockInAmount,
+  removeRecoveriesForFreeUp,
+} from '../engine/plannedExpenseRecovery';
 import type {
   AppState,
   BudgetState,
@@ -37,6 +42,7 @@ const EMPTY_BUDGET: BudgetState = {
   unplannedExpenses: [],
   envelopeActualizations: [],
   plannedExpensePayments: [],
+  plannedExpenseRecoveries: [],
   plannedExpenseSettlements: [],
   reconciledMonths: [],
   monthCarryAdjustments: [],
@@ -57,6 +63,10 @@ function migrateBudget(b: BudgetState): BudgetState {
     incomeByMonth: b.incomeByMonth ?? {},
     lockIns: b.lockIns.map(l => ({ ...l, lockState: l.lockState ?? ('planned' as const) })),
     plannedExpensePayments: b.plannedExpensePayments ?? [],
+    plannedExpenseRecoveries: backfillRecoveriesFromLockIns({
+      ...b,
+      plannedExpenseRecoveries: b.plannedExpenseRecoveries ?? [],
+    }),
     reconciledMonths: b.reconciledMonths ?? [],
     monthCarryAdjustments: b.monthCarryAdjustments ?? [],
   };
@@ -104,6 +114,24 @@ export function useBudgetState(currentMonth: Month) {
 
   function setIncome(amount: number): void {
     update(b => ({ ...b, income: amount }));
+  }
+
+  function setIncomeForMonth(month: Month, amount: number): void {
+    update(b => ({
+      ...b,
+      incomeByMonth: {
+        ...(b.incomeByMonth ?? {}),
+        [month]: amount,
+      },
+    }));
+  }
+
+  function clearIncomeForMonth(month: Month): void {
+    update(b => {
+      const next = { ...(b.incomeByMonth ?? {}) };
+      delete next[month];
+      return { ...b, incomeByMonth: next };
+    });
   }
 
   // ─── Fixed expenses ──────────────────────────────────────────────────────────
@@ -191,6 +219,14 @@ export function useBudgetState(currentMonth: Month) {
   // Multiple lock-ins per month accumulate — each call adds to the running total.
   function lockIn(amount: number): void {
     update(b => {
+      const recoveries = b.plannedExpenseRecoveries ?? [];
+      const booked = recoveriesFromLockInAmount(
+        amount,
+        currentMonth,
+        b.plannedExpenses,
+        b.plannedExpensePayments ?? [],
+        recoveries,
+      );
       const alreadyExists = b.lockIns.some(l => l.month === currentMonth);
       if (alreadyExists) {
         return {
@@ -200,6 +236,7 @@ export function useBudgetState(currentMonth: Month) {
               ? { ...l, lockedAmount: l.lockedAmount + amount }
               : l
           ),
+          plannedExpenseRecoveries: [...recoveries, ...booked],
         };
       }
       return {
@@ -208,6 +245,7 @@ export function useBudgetState(currentMonth: Month) {
           ...b.lockIns,
           { id: crypto.randomUUID(), month: currentMonth, lockedAmount: amount, lockState: 'planned' as const },
         ],
+        plannedExpenseRecoveries: [...recoveries, ...booked],
       };
     });
   }
@@ -221,6 +259,11 @@ export function useBudgetState(currentMonth: Month) {
         l.month === currentMonth
           ? { ...l, lockedAmount: Math.max(0, l.lockedAmount - amount) }
           : l
+      ),
+      plannedExpenseRecoveries: removeRecoveriesForFreeUp(
+        amount,
+        currentMonth,
+        b.plannedExpenseRecoveries ?? [],
       ),
     }));
   }
@@ -400,6 +443,50 @@ export function useBudgetState(currentMonth: Month) {
     }));
   }
 
+  /** Record an early payment toward a future planned expense with automatic pot/free split. */
+  function recordEarlyPayment(
+    plannedExpenseId: string,
+    paymentMonth: Month,
+    amount: number,
+  ): void {
+    update(b => {
+      const expense = b.plannedExpenses.find(e => e.id === plannedExpenseId);
+      if (!expense || amount <= 0) return b;
+
+      const engine = runEngine(b, currentMonth);
+      const monthResult = engine.months.find(m => m.month === paymentMonth);
+      const potAvailable = Math.max(0, monthResult?.physicalPotAfter ?? 0);
+      const potDeduction = Math.min(amount, potAvailable);
+      const freePortion = amount - potDeduction;
+
+      const payment: PlannedExpensePayment = {
+        id: crypto.randomUUID(),
+        plannedExpenseId,
+        month: paymentMonth,
+        amount,
+        potDeduction,
+      };
+
+      let unplannedExpenses = [...b.unplannedExpenses];
+      if (freePortion > 0) {
+        unplannedExpenses.push({
+          id: crypto.randomUUID(),
+          name: `${expense.name} early payment`,
+          amount: freePortion,
+          month: paymentMonth,
+          category: expense.category,
+          linkedPlannedExpenseId: plannedExpenseId,
+        });
+      }
+
+      return {
+        ...b,
+        plannedExpensePayments: [...(b.plannedExpensePayments ?? []), payment],
+        unplannedExpenses,
+      };
+    });
+  }
+
   // ─── Unplanned expenses ───────────────────────────────────────────────────────
 
   function addUnplannedExpense(expense: Omit<UnplannedExpense, 'id'>): void {
@@ -455,6 +542,7 @@ export function useBudgetState(currentMonth: Month) {
         unplannedExpenses:            [],
         envelopeActualizations:       [],
         plannedExpensePayments:       [],
+        plannedExpenseRecoveries:     [],
         plannedExpenseSettlements:    [],
         reconciledMonths:             [],
         monthCarryAdjustments:        [],
@@ -474,6 +562,8 @@ export function useBudgetState(currentMonth: Month) {
     hasCompletedSetup: appState.budget.income > 0,
     // Actions
     setIncome,
+    setIncomeForMonth,
+    clearIncomeForMonth,
     addFixedExpense,
     updateFixedExpense,
     removeFixedExpense,
@@ -490,6 +580,7 @@ export function useBudgetState(currentMonth: Month) {
     actualizeEnvelope,
     settleExpense,
     addPlannedExpensePayment,
+    recordEarlyPayment,
     undo,
     completeOnboarding,
     importBudget,

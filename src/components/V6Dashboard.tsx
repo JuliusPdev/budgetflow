@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { Settings2, Undo2, X } from 'lucide-react';
 import { addMonths, runEngine } from '../engine/smoothing';
+import { fundingProgressForExpense } from '../engine/plannedExpenseRecovery';
 import { formatCurrency, formatCurrencyExact, formatMonth } from '../utils/formatting';
+import {
+  plannedExpenseLedgerCell,
+  setAsideLedgerAmount,
+} from '../utils/ledgerDisplay';
 import type { BudgetState, EngineOutput, Month, MonthResult, PlannedExpense } from '../engine/types';
 
 interface Props {
@@ -14,6 +19,9 @@ interface Props {
   addPlannedExpense: (expense: Omit<PlannedExpense, 'id'>) => void;
   updatePlannedExpense: (id: string, changes: Partial<Omit<PlannedExpense, 'id'>>) => void;
   removePlannedExpense: (id: string) => void;
+  setIncomeForMonth: (month: Month, amount: number) => void;
+  clearIncomeForMonth: (month: Month) => void;
+  recordEarlyPayment: (plannedExpenseId: string, paymentMonth: Month, amount: number) => void;
   lockIn: (amount: number) => void;
   freeUp: (amount: number) => void;
 }
@@ -528,6 +536,149 @@ function HeroCards({
   );
 }
 
+function IncomeOverrideModal({
+  month,
+  budget,
+  onClose,
+  onSave,
+  onClear,
+}: {
+  month: Month;
+  budget: BudgetState;
+  onClose: () => void;
+  onSave: (amount: number) => void;
+  onClear: () => void;
+}) {
+  const defaultIncome = budget.incomeByMonth?.[month] ?? budget.income;
+  const [amountStr, setAmountStr] = useState(String(defaultIncome));
+  const amount = parseFloat(amountStr) || 0;
+  const hasOverride = budget.incomeByMonth?.[month] != null;
+
+  return (
+    <div className="modal-overlay v6-planner-overlay" onClick={onClose}>
+      <div className="modal v6-planner-modal" role="dialog" aria-modal="true" onClick={event => event.stopPropagation()}>
+        <div className="v6-planner-header">
+          <div>
+            <p className="csv-wizard-kicker">Planning</p>
+            <h2 className="modal-title">Income for {formatMonth(month)}</h2>
+            <p className="v6-card-caption">
+              Override the default {formatCurrency(budget.income)}/mo for this month only.
+            </p>
+          </div>
+          <button type="button" className="modal-close-btn" onClick={onClose} aria-label="Close">
+            <X size={18} />
+          </button>
+        </div>
+        <label className="v6-planner-field">
+          <span>Monthly income</span>
+          <div className="input-prefix">
+            <input
+              className="input"
+              type="number"
+              min="0"
+              step="0.01"
+              value={amountStr}
+              onChange={event => setAmountStr(event.target.value)}
+              autoFocus
+            />
+          </div>
+        </label>
+        <div className="csv-step-actions">
+          {hasOverride && (
+            <button type="button" className="btn btn-ghost" onClick={onClear}>
+              Use default income
+            </button>
+          )}
+          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button type="button" className="btn btn-primary" disabled={amount <= 0} onClick={() => onSave(amount)}>
+            Save
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EarlyPaymentModal({
+  expense,
+  paymentMonth,
+  budget,
+  currentMonth,
+  onClose,
+  onConfirm,
+}: {
+  expense: PlannedExpense;
+  paymentMonth: Month;
+  budget: BudgetState;
+  currentMonth: Month;
+  onClose: () => void;
+  onConfirm: (amount: number) => void;
+}) {
+  const [amountStr, setAmountStr] = useState('');
+  const amount = parseFloat(amountStr) || 0;
+  const engine = amount > 0 ? runEngine(budget, currentMonth) : null;
+  const monthResult = engine?.months.find(m => m.month === paymentMonth);
+  const potAvailable = Math.max(0, monthResult?.physicalPotAfter ?? 0);
+  const potPortion = Math.min(amount, potAvailable);
+  const recoveryPortion = Math.max(0, amount - potPortion);
+
+  return (
+    <div className="modal-overlay v6-planner-overlay" onClick={onClose}>
+      <div className="modal v6-planner-modal" role="dialog" aria-modal="true" onClick={event => event.stopPropagation()}>
+        <div className="v6-planner-header">
+          <div>
+            <p className="csv-wizard-kicker">Actualize</p>
+            <h2 className="modal-title">Early payment · {expense.name}</h2>
+            <p className="v6-card-caption">
+              Record what you paid in {formatMonth(paymentMonth)} toward this {formatCurrency(expense.amount)} expense due in {formatMonth(expense.targetMonth)}.
+            </p>
+          </div>
+          <button type="button" className="modal-close-btn" onClick={onClose} aria-label="Close">
+            <X size={18} />
+          </button>
+        </div>
+        <label className="v6-planner-field">
+          <span>Amount paid</span>
+          <div className="input-prefix">
+            <input
+              className="input"
+              type="number"
+              min="0"
+              step="0.01"
+              value={amountStr}
+              onChange={event => setAmountStr(event.target.value)}
+              autoFocus
+            />
+          </div>
+        </label>
+        {amount > 0 && (
+          <div className="v6-planner-analysis">
+            <p className="v6-card-caption">
+              {potPortion > 0 && <>{formatCurrency(potPortion)} from pot · </>}
+              {recoveryPortion > 0 && (
+                <>{formatCurrency(recoveryPortion)} from free budget — added to recovery (repaid via future set-aside)</>
+              )}
+              {recoveryPortion === 0 && potPortion === amount && <>Fully covered by pot</>}
+            </p>
+          </div>
+        )}
+        <div className="csv-step-actions">
+          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button type="button" className="btn btn-primary" disabled={amount <= 0} onClick={() => onConfirm(amount)}>
+            Record payment
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function formatLedgerCellAmount(value: number): string {
+  if (value === 0) return '·';
+  const prefix = value < 0 ? '-' : '';
+  return `${prefix}${formatCurrency(Math.abs(value)).replace('€', '')}`;
+}
+
 function HorizontalLedger({
   engine,
   budget,
@@ -535,6 +686,9 @@ function HorizontalLedger({
   updatePlannedExpense,
   removePlannedExpense,
   onPlanExpenseForMonth,
+  setIncomeForMonth,
+  clearIncomeForMonth,
+  recordEarlyPayment,
 }: {
   engine: EngineOutput;
   budget: BudgetState;
@@ -542,20 +696,30 @@ function HorizontalLedger({
   updatePlannedExpense: (id: string, changes: Partial<Omit<PlannedExpense, 'id'>>) => void;
   removePlannedExpense: (id: string) => void;
   onPlanExpenseForMonth: (month: Month) => void;
+  setIncomeForMonth: (month: Month, amount: number) => void;
+  clearIncomeForMonth: (month: Month) => void;
+  recordEarlyPayment: (plannedExpenseId: string, paymentMonth: Month, amount: number) => void;
 }) {
   const [editingExpense, setEditingExpense] = useState<{ expense: PlannedExpense; initialFocus: 'name' | 'amount' } | null>(null);
+  const [incomeModalMonth, setIncomeModalMonth] = useState<Month | null>(null);
+  const [earlyPayment, setEarlyPayment] = useState<{ expense: PlannedExpense; paymentMonth: Month } | null>(null);
   const months = engine.months;
   const sortedPlannedExpenses = [...budget.plannedExpenses].sort(comparePlannedExpensesByTime);
   const gridStyle = timelineGridColumns(months.length);
   const timelineWidth = TIMELINE_LABEL_WIDTH + months.length * TIMELINE_MONTH_WIDTH;
+  const payments = budget.plannedExpensePayments ?? [];
+  const recoveries = budget.plannedExpenseRecoveries ?? [];
+  const showSetAsideSplit = months.some(
+    month => month.setAsideRecovery > 0 || month.setAsideFunding > 0,
+  );
+  const incomeValues = months.map(
+    month => (budget.incomeByMonth?.[month.month] ?? budget.income) + month.incomeCarryover,
+  );
   const rows = [
     {
       group: 'Inflow',
       label: 'Income',
-      values: months.map(
-        month =>
-          (budget.incomeByMonth?.[month.month] ?? budget.income) + month.incomeCarryover,
-      ),
+      values: incomeValues,
       tone: 'ink',
     },
     {
@@ -573,7 +737,7 @@ function HorizontalLedger({
     {
       group: 'Outflow',
       label: 'Set-aside to pot',
-      values: months.map(month => -month.setAsideRecommended),
+      values: months.map(month => -setAsideLedgerAmount(month, currentMonth)),
       tone: 'amber',
     },
     {
@@ -624,16 +788,53 @@ function HorizontalLedger({
                 <div className={`v6-ledger-label v6-ledger-tone--${row.tone}`}>{row.label}</div>
                 {row.values.map((value, valueIndex) => {
                   const month = months[valueIndex];
+                  const hasIncomeOverride = row.label === 'Income' && budget.incomeByMonth?.[month.month] != null;
                   return (
                     <div
                       key={month.month}
-                      className={`v6-ledger-value v6-ledger-tone--${row.tone} ${month.month === currentMonth ? 'is-current' : ''} ${month.month < currentMonth ? 'is-past' : ''}`}
+                      className={`v6-ledger-value v6-ledger-tone--${row.tone} ${month.month === currentMonth ? 'is-current' : ''} ${month.month < currentMonth ? 'is-past' : ''} ${hasIncomeOverride ? 'has-override' : ''}`}
                     >
-                      {value < 0 ? '-' : ''}{formatCurrency(Math.abs(value)).replace('€', '')}
+                      {formatLedgerCellAmount(value)}
                     </div>
                   );
                 })}
               </div>
+              {row.label === 'Set-aside to pot' && showSetAsideSplit && (
+                <>
+                  {months.some(month => month.setAsideRecovery > 0) && (
+                    <div className="v6-ledger-row v6-ledger-row--subitem" style={gridStyle}>
+                      <div className="v6-ledger-subitem-label v6-ledger-tone--amber">
+                        <span className="v6-ledger-dot" aria-hidden />
+                        <span>Recovering advance</span>
+                      </div>
+                      {months.map(month => (
+                        <div
+                          key={month.month}
+                          className={`v6-ledger-value v6-ledger-tone--amber ${month.month === currentMonth ? 'is-current' : ''} ${month.month < currentMonth ? 'is-past' : ''}`}
+                        >
+                          {formatLedgerCellAmount(-month.setAsideRecovery)}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {months.some(month => month.setAsideFunding > 0) && (
+                    <div className="v6-ledger-row v6-ledger-row--subitem" style={gridStyle}>
+                      <div className="v6-ledger-subitem-label v6-ledger-tone--amber">
+                        <span className="v6-ledger-dot" aria-hidden />
+                        <span>Toward planned expenses</span>
+                      </div>
+                      {months.map(month => (
+                        <div
+                          key={month.month}
+                          className={`v6-ledger-value v6-ledger-tone--amber ${month.month === currentMonth ? 'is-current' : ''} ${month.month < currentMonth ? 'is-past' : ''}`}
+                        >
+                          {formatLedgerCellAmount(-month.setAsideFunding)}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           );
         })}
@@ -644,11 +845,20 @@ function HorizontalLedger({
               <div>Planned expenses</div>
               {months.map(month => <div key={month.month} className={month.month === currentMonth ? 'is-current' : ''} />)}
             </div>
-            {sortedPlannedExpenses.map(expense => (
+            {sortedPlannedExpenses.map(expense => {
+              const funding = fundingProgressForExpense(expense, payments, recoveries);
+              return (
               <div key={expense.id} className="v6-ledger-row" style={gridStyle}>
                 <div className="v6-ledger-planned-name">
                   <span className="v6-ledger-dot" />
-                  <span>{expense.name}</span>
+                  <span>
+                    {expense.name}
+                    {funding.recoveryOwed > 0 && (
+                      <span className="v6-ledger-planned-meta">
+                        {' '}· {formatCurrency(funding.recoveryOwed)} recovery owed
+                      </span>
+                    )}
+                  </span>
                   <button
                     type="button"
                     className="v6-ledger-remove-btn"
@@ -658,31 +868,76 @@ function HorizontalLedger({
                     ×
                   </button>
                 </div>
-                {months.map(month => (
+                {months.map(month => {
+                  const cell = plannedExpenseLedgerCell(expense, month.month, payments);
+                  const canRecordEarly =
+                    cell.kind === 'empty' &&
+                    month.month < expense.targetMonth &&
+                    month.month <= currentMonth;
+                  return (
                   <div
                     key={month.month}
                     className={`v6-ledger-value v6-ledger-tone--amber ${month.month === currentMonth ? 'is-current' : ''} ${month.month < currentMonth ? 'is-past' : ''}`}
                   >
-                    {month.month === expense.targetMonth ? (
+                    {cell.kind === 'early-payment' ? (
+                      <span
+                        className="v6-ledger-planned-early"
+                        title={`Early payment for ${expense.name} in ${formatMonth(month.month)}`}
+                      >
+                        -{formatCurrency(cell.amount).replace('€', '')}
+                      </span>
+                    ) : cell.kind === 'target' ? (
                       <button
                         type="button"
                         className="v6-ledger-planned-cell-btn"
                         onClick={() => setEditingExpense({ expense, initialFocus: 'amount' })}
                         onDoubleClick={() => setEditingExpense({ expense, initialFocus: 'amount' })}
                         aria-label={`Edit amount for ${expense.name} in ${formatMonth(month.month)}`}
-                        title={`Edit amount for ${expense.name} in ${formatMonth(month.month)}`}
+                        title={`Planned amount due in ${formatMonth(month.month)}`}
                       >
-                        -{formatCurrency(expense.amount).replace('€', '')}
+                        -{formatCurrency(cell.amount).replace('€', '')}
+                      </button>
+                    ) : canRecordEarly ? (
+                      <button
+                        type="button"
+                        className="v6-ledger-planned-cell-btn v6-ledger-planned-cell-btn--add"
+                        onClick={() => setEarlyPayment({ expense, paymentMonth: month.month })}
+                        aria-label={`Record early payment for ${expense.name} in ${formatMonth(month.month)}`}
+                        title={`Record early payment in ${formatMonth(month.month)}`}
+                      >
+                        +
                       </button>
                     ) : (
                       '·'
                     )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
-            ))}
+              );
+            })}
           </>
         )}
+      </div>
+
+      <div className="v6-ledger-add-row v6-ledger-add-row--income" style={{ ...gridStyle, width: timelineWidth }}>
+        <div className="v6-ledger-add-label">Income</div>
+        {months.map(month => (
+          <div
+            key={month.month}
+            className={`v6-ledger-add-cell ${month.month === currentMonth ? 'is-current' : ''} ${month.month < currentMonth ? 'is-past' : ''}`}
+          >
+            <button
+              type="button"
+              className="v6-ledger-add-btn"
+              onClick={() => setIncomeModalMonth(month.month)}
+              aria-label={`Set income for ${formatMonth(month.month)}`}
+              title={`Set income for ${formatMonth(month.month)}`}
+            >
+              +
+            </button>
+          </div>
+        ))}
       </div>
 
       <div className="v6-ledger-add-row" style={{ ...gridStyle, width: timelineWidth }}>
@@ -708,6 +963,36 @@ function HorizontalLedger({
           );
         })}
       </div>
+
+      {incomeModalMonth && (
+        <IncomeOverrideModal
+          month={incomeModalMonth}
+          budget={budget}
+          onClose={() => setIncomeModalMonth(null)}
+          onSave={amount => {
+            setIncomeForMonth(incomeModalMonth, amount);
+            setIncomeModalMonth(null);
+          }}
+          onClear={() => {
+            clearIncomeForMonth(incomeModalMonth);
+            setIncomeModalMonth(null);
+          }}
+        />
+      )}
+
+      {earlyPayment && (
+        <EarlyPaymentModal
+          expense={earlyPayment.expense}
+          paymentMonth={earlyPayment.paymentMonth}
+          budget={budget}
+          currentMonth={currentMonth}
+          onClose={() => setEarlyPayment(null)}
+          onConfirm={amount => {
+            recordEarlyPayment(earlyPayment.expense.id, earlyPayment.paymentMonth, amount);
+            setEarlyPayment(null);
+          }}
+        />
+      )}
 
       {editingExpense && (
         <EditPlannedExpenseModal
@@ -1147,6 +1432,9 @@ export default function V6Dashboard({
   addPlannedExpense,
   updatePlannedExpense,
   removePlannedExpense,
+  setIncomeForMonth,
+  clearIncomeForMonth,
+  recordEarlyPayment,
   lockIn,
   freeUp,
 }: Props) {
@@ -1250,6 +1538,9 @@ export default function V6Dashboard({
                 updatePlannedExpense={updatePlannedExpense}
                 removePlannedExpense={removePlannedExpense}
                 onPlanExpenseForMonth={openPlanner}
+                setIncomeForMonth={setIncomeForMonth}
+                clearIncomeForMonth={clearIncomeForMonth}
+                recordEarlyPayment={recordEarlyPayment}
               />
             </div>
           </div>

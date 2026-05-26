@@ -59,6 +59,9 @@ function App() {
         addPlannedExpense={state.addPlannedExpense}
         updatePlannedExpense={state.updatePlannedExpense}
         removePlannedExpense={state.removePlannedExpense}
+        setIncomeForMonth={state.setIncomeForMonth}
+        clearIncomeForMonth={state.clearIncomeForMonth}
+        recordEarlyPayment={state.recordEarlyPayment}
         lockIn={state.lockIn}
         freeUp={state.freeUp}
       />

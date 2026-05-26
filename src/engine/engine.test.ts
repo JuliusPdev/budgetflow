@@ -613,3 +613,68 @@ describe('May early Trip payment reduces future set-aside amounts', () => {
     });
   });
 });
+
+describe('Early payment recovery increases set-aside until repaid', () => {
+  const state: BudgetState = {
+    income: 3000,
+    fixedExpenses: [],
+    plannedExpenses: [
+      {
+        id: 'trip',
+        name: 'Trip',
+        amount: 800,
+        targetMonth: '2026-05',
+        category: 'travel',
+        confidence: 'confirmed',
+      },
+    ],
+    savingsGoals: [],
+    lockIns: [],
+    unplannedExpenses: [
+      {
+        id: 'free-portion',
+        name: 'Trip early payment',
+        amount: 200,
+        month: '2026-02',
+        category: 'travel',
+        linkedPlannedExpenseId: 'trip',
+      },
+    ],
+    envelopeActualizations: [],
+    plannedExpensePayments: [
+      {
+        id: 'early-pay',
+        plannedExpenseId: 'trip',
+        month: '2026-02',
+        amount: 400,
+        potDeduction: 200,
+      },
+    ],
+    plannedExpenseRecoveries: [],
+    plannedExpenseSettlements: [],
+    reconciledMonths: [],
+    monthCarryAdjustments: [],
+  };
+
+  const result = runEngine(state, '2026-03');
+
+  it('allocates set-aside to recovery before funding while €200 is still owed', () => {
+    const march = find(result.months, '2026-03');
+    expect(r(march.setAsideRecovery)).toBeGreaterThan(0);
+    expect(r(march.setAsideRecovery + march.setAsideFunding)).toBe(r(march.setAsideRecommended));
+  });
+
+  it('records recovery against Trip when lock-in recoveries exist', () => {
+    const withRecovery: BudgetState = {
+      ...state,
+      lockIns: [{ id: 'l1', month: '2026-03', lockedAmount: 200, lockState: 'planned' }],
+      plannedExpenseRecoveries: [
+        { id: 'r1', plannedExpenseId: 'trip', month: '2026-03', amount: 200 },
+      ],
+    };
+    const after = runEngine(withRecovery, '2026-04');
+    const april = find(after.months, '2026-04');
+    expect(r(april.setAsideRecovery)).toBe(0);
+    expect(r(april.setAsideFunding)).toBe(r(april.setAsideRecommended));
+  });
+});

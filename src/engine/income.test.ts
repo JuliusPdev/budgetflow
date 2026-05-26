@@ -45,4 +45,16 @@ describe('income', () => {
     expect(next.incomeByMonth?.['2026-05']).toBe(3100);
     expect(next.income).toBe(3100);
   });
+
+  it('one-time income override changes only that month in the engine', () => {
+    const budget: BudgetState = {
+      ...base,
+      incomeByMonth: { '2026-07': 4500 },
+    };
+    const engine = runEngine(budget, '2026-05');
+    const july = engine.months.find(m => m.month === '2026-07');
+    const june = engine.months.find(m => m.month === '2026-06');
+    expect(july?.monthlyIncome).toBe(4500);
+    expect(june?.monthlyIncome).toBe(3000);
+  });
 });

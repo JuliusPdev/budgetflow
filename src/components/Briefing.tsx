@@ -1,4 +1,3 @@
-import { addMonths } from '../engine/smoothing';
 import { formatCurrency, formatCurrencyExact, formatMonth } from '../utils/formatting';
 import type { BudgetState, EngineOutput, Month, SavingsGoal } from '../engine/types';
 
@@ -104,15 +103,8 @@ export default function Briefing({ engine, budget, currentMonth }: Props) {
     )
   ).length;
 
-  const priorMonth = addMonths(currentMonth, -1);
-  const priorUnreconciled =
-    priorMonth < currentMonth &&
-    !(budget.reconciledMonths ?? []).includes(priorMonth);
-
   // Single contextual status sentence — no actions, purely informational.
   function getNudge(): string {
-    if (priorUnreconciled)
-      return `Reconcile ${formatMonth(priorMonth)} with your bank CSV when ready.`;
     if (freeBudget < 0)
       return 'Your expenses exceed your income this month. Consider adjusting your plan.';
     if (lockStatus.kind === 'additional-needed')

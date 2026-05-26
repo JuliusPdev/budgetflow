@@ -112,6 +112,15 @@ export interface PlannedExpensePayment {
   potDeduction: number;
 }
 
+// Repayment of the free-budget portion of an early planned-expense payment.
+// Booked when the user locks in set-aside; recovery slice is allocated before funding.
+export interface PlannedExpenseRecovery {
+  id: string;
+  plannedExpenseId: string;
+  month: Month;
+  amount: number;
+}
+
 // A settlement record is created when a planned expense's target month arrives and
 // the user confirms what it actually cost. It acts like a receipt: "I budgeted €650
 // for this, it actually cost €580, and the €70 surplus stays in the pot."
@@ -155,6 +164,7 @@ export interface BudgetState {
   unplannedExpenses: UnplannedExpense[];
   envelopeActualizations: EnvelopeActualization[];
   plannedExpensePayments: PlannedExpensePayment[];
+  plannedExpenseRecoveries?: PlannedExpenseRecovery[];
   plannedExpenseSettlements: PlannedExpenseSettlement[];
   reconciledMonths?: Month[];
   monthCarryAdjustments?: MonthCarryAdjustments[];
@@ -189,6 +199,11 @@ export interface MonthResult {
   unplannedTotal: number;                 // sum of those expenses
   incomeCarryover: number;                // free budget carried into this month
   setAsideRecommended: number;            // what the algorithm says to set aside
+  /** Portion of setAsideRecommended repaying early free-budget payments. */
+  setAsideRecovery: number;
+  /** Portion of setAsideRecommended funding planned expenses (goes to pot). */
+  setAsideFunding: number;
+  plannedExpenseRecoverySlices: Array<{ plannedExpenseId: string; expenseName: string; amount: number }>;
   setAsideLocked: number;                 // what has actually been transferred (0 for future months)
   freeBudget: number;                     // A − set-aside − unplanned expenses
   potAfter: number;                       // cumulative pot balance after this month
