@@ -441,16 +441,7 @@ export function useBudgetState(currentMonth: Month) {
     setAppState({ budget: migrateBudget(newBudget), previousSnapshot: null });
   }
 
-  // Applies a full budget state after CSV reconciliation (supports undo).
-  function applyReconciliationBudget(next: BudgetState): void {
-    update(() => migrateBudget(next));
-  }
-
-  function isMonthReconciled(month: Month): boolean {
-    return (appState.budget.reconciledMonths ?? []).includes(month);
-  }
-
-  // Clears testing/reconciliation data while keeping the onboarding setup:
+  // Clears testing data while keeping the onboarding setup:
   // income, fixed expenses/envelopes, and savings goal definitions.
   function resetWorkingData(): void {
     setAppState(prev => ({
@@ -502,8 +493,6 @@ export function useBudgetState(currentMonth: Month) {
     undo,
     completeOnboarding,
     importBudget,
-    applyReconciliationBudget,
-    isMonthReconciled,
     resetWorkingData,
   };
 }

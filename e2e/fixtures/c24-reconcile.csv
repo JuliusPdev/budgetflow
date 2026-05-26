@@ -1,3 +1,0 @@
-Transaktionstyp;Buchungsdatum;Karteneinsatz;Betrag;Zahlungsempfänger;IBAN;BIC;Verwendungszweck;Beschreibung;Kontonummer;Kontoname;Kategorie;Unterkategorie;Bargeldabhebung
-Gutschrift;01.04.2026;;3000,00;Employer;;;;;123456;C24 Pluskonto;Einkommen;;
-Online-Kartenzahlung;05.04.2026;;-42,50;REWE;;;;;123456;Essen;Lebensmittel;;

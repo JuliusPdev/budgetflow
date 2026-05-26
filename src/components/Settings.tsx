@@ -10,7 +10,6 @@ interface Props {
   addFixedExpense:    (e: Omit<FixedExpense, 'id' | 'actualAmount'>) => void;
   updateFixedExpense: (id: string, changes: Partial<Omit<FixedExpense, 'id'>>) => void;
   removeFixedExpense: (id: string) => void;
-  onStartReconciliation?: () => void;
   onResetWorkingData: () => void;
   onClose:            () => void;
 }
@@ -23,7 +22,6 @@ export default function Settings({
   addFixedExpense,
   updateFixedExpense,
   removeFixedExpense,
-  onStartReconciliation,
   onResetWorkingData,
   onClose,
 }: Props) {
@@ -84,7 +82,7 @@ export default function Settings({
 
   function handleResetWorkingData() {
     const confirmed = window.confirm(
-      'Reset all testing and reconciliation data? This keeps income, fixed expenses, envelopes, and savings goals, but clears planned expenses, CSV uploads, reconciled months, carry-over, settlements, lock-ins, and spending records.'
+      'Reset all testing data? This keeps income, fixed expenses, envelopes, and savings goals, but clears planned expenses, carry-over, settlements, lock-ins, and spending records.'
     );
     if (!confirmed) return;
     onResetWorkingData();
@@ -99,26 +97,10 @@ export default function Settings({
 
         <h2 className="modal-title">Settings</h2>
 
-        {onStartReconciliation && (
-          <section className="settings-section">
-            <h3 className="settings-section-title">Month-end reconciliation</h3>
-            <p className="settings-hint">
-              Import your C24 bank CSV to reconcile a completed month.
-            </p>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={() => { onStartReconciliation(); onClose(); }}
-            >
-              Import bank CSV…
-            </button>
-          </section>
-        )}
-
         <section className="settings-section">
           <h3 className="settings-section-title">Testing reset</h3>
           <p className="settings-hint">
-            Keep your onboarding setup, but clear all planned/test/reconciliation data and uploaded CSV sessions.
+            Keep your onboarding setup, but clear all planned expenses, lock-ins, and spending records.
           </p>
           <button
             type="button"
@@ -133,7 +115,7 @@ export default function Settings({
         <section className="settings-section">
           <h3 className="settings-section-title">Income</h3>
           <p className="settings-hint">
-            Default monthly income for months you have not settled via CSV yet. Confirmed amounts from import are stored per month.
+            Default monthly income. You can override income for specific months in the planner when needed.
           </p>
           <div className="settings-income-row">
             <div className="input-prefix settings-income-input">

@@ -8,12 +8,9 @@ interface Props {
   engine: EngineOutput;
   budget: BudgetState;
   currentMonth: Month;
-  isMonthReconciled: (month: Month) => boolean;
   canUndo: boolean;
   onUndo: () => void;
   onOpenSettings: () => void;
-  /** When omitted, CSV reconciliation UI is hidden (slim app). */
-  onStartReconciliation?: (month?: Month) => void;
   addPlannedExpense: (expense: Omit<PlannedExpense, 'id'>) => void;
   updatePlannedExpense: (id: string, changes: Partial<Omit<PlannedExpense, 'id'>>) => void;
   removePlannedExpense: (id: string) => void;
@@ -383,7 +380,7 @@ function SetAsideLockCard({
 
   function getCaption(): string {
     if (statusKind === 'unlocked') return 'Nothing transferred yet this month.';
-    if (lockState === 'confirmed') return `${formatCurrency(lockedDisplay)} was verified from CSV import.`;
+    if (lockState === 'confirmed') return `${formatCurrency(lockedDisplay)} is marked as confirmed.`;
     if (statusKind === 'additional-needed') return `Lock in ${formatCurrency(additionalNeeded)} more to match the plan.`;
     if (statusKind === 'surplus') return `You can free up ${formatCurrency(surplus)} from this month.`;
     return 'This month is fully locked in.';
@@ -535,8 +532,6 @@ function HorizontalLedger({
   engine,
   budget,
   currentMonth,
-  isMonthReconciled,
-  onStartReconciliation,
   updatePlannedExpense,
   removePlannedExpense,
   onPlanExpenseForMonth,
@@ -544,8 +539,6 @@ function HorizontalLedger({
   engine: EngineOutput;
   budget: BudgetState;
   currentMonth: Month;
-  isMonthReconciled: (month: Month) => boolean;
-  onStartReconciliation?: (month?: Month) => void;
   updatePlannedExpense: (id: string, changes: Partial<Omit<PlannedExpense, 'id'>>) => void;
   removePlannedExpense: (id: string) => void;
   onPlanExpenseForMonth: (month: Month) => void;
@@ -606,23 +599,12 @@ function HorizontalLedger({
           {months.map(month => {
             const isCurrent = month.month === currentMonth;
             const isPast = month.month < currentMonth;
-            const reconciled = isMonthReconciled(month.month);
             return (
-              <div key={month.month} className={`v6-ledger-cell ${isCurrent ? 'is-current' : ''} ${isPast ? 'is-past' : ''} ${reconciled ? 'is-reconciled' : ''}`}>
+              <div key={month.month} className={`v6-ledger-cell ${isCurrent ? 'is-current' : ''} ${isPast ? 'is-past' : ''}`}>
                 <strong>{shortMonth(month.month)} <span>{formatMonthYearShort(month.month)}</span></strong>
                 <small>
-                  {isCurrent ? 'Now' : reconciled ? 'Reconciled' : isPast ? 'Past' : 'Planned'}
+                  {isCurrent ? 'Now' : isPast ? 'Past' : 'Planned'}
                 </small>
-                {onStartReconciliation && isPast && !reconciled && (
-                  <button
-                    type="button"
-                    className="v6-ledger-reconcile-btn"
-                    data-testid="month-end-reconciliation-btn"
-                    onClick={() => onStartReconciliation(month.month)}
-                  >
-                    Reconcile
-                  </button>
-                )}
               </div>
             );
           })}
@@ -1159,11 +1141,9 @@ export default function V6Dashboard({
   engine,
   budget,
   currentMonth,
-  isMonthReconciled,
   canUndo,
   onUndo,
   onOpenSettings,
-  onStartReconciliation,
   addPlannedExpense,
   updatePlannedExpense,
   removePlannedExpense,
@@ -1171,11 +1151,6 @@ export default function V6Dashboard({
   freeUp,
 }: Props) {
   const current = getCurrentResult(engine, currentMonth);
-  const priorMonth = addMonths(currentMonth, -1);
-  const priorMonthNeedsReconciliation =
-    onStartReconciliation != null &&
-    priorMonth < currentMonth &&
-    !isMonthReconciled(priorMonth);
   const [plannerOpen, setPlannerOpen] = useState(false);
   const [plannerInitialMonth, setPlannerInitialMonth] = useState<Month>(currentMonth);
   const timelineWidth = TIMELINE_LABEL_WIDTH + engine.months.length * TIMELINE_MONTH_WIDTH;
@@ -1212,27 +1187,11 @@ export default function V6Dashboard({
         <div className="v6-top-actions">
           <span className="v6-date-status">
             <span>{formatMonth(currentMonth)} · </span>
-            {priorMonthNeedsReconciliation ? (
-              <button
-                type="button"
-                className="v6-status-reconcile-link"
-                data-testid="reconcile-prior-month-nudge"
-                onClick={() => onStartReconciliation(priorMonth)}
-              >
-                Reconcile {formatMonth(priorMonth)} with your bank CSV
-              </button>
-            ) : (
-              <strong>On track for the current plan</strong>
-            )}
+            <strong>On track for the current plan</strong>
           </span>
           {canUndo && (
             <button className="v6-btn v6-btn--ghost" onClick={onUndo} data-testid="undo-button">
               <Undo2 size={15} /> Undo
-            </button>
-          )}
-          {onStartReconciliation && (
-            <button className="v6-btn v6-btn--ghost" onClick={() => onStartReconciliation()}>
-              Import CSV
             </button>
           )}
           <button className="v6-btn v6-btn--ghost v6-icon-only" onClick={onOpenSettings} aria-label="Open settings">
@@ -1288,8 +1247,6 @@ export default function V6Dashboard({
                 engine={engine}
                 budget={budget}
                 currentMonth={currentMonth}
-                isMonthReconciled={isMonthReconciled}
-                onStartReconciliation={onStartReconciliation}
                 updatePlannedExpense={updatePlannedExpense}
                 removePlannedExpense={removePlannedExpense}
                 onPlanExpenseForMonth={openPlanner}

@@ -53,7 +53,6 @@ function App() {
         engine={state.engine}
         budget={state.budget}
         currentMonth={state.currentMonth}
-        isMonthReconciled={state.isMonthReconciled}
         canUndo={state.canUndo}
         onUndo={state.undo}
         onOpenSettings={() => setShowSettings(true)}
