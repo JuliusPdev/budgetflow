@@ -19,13 +19,6 @@ export default function EnvelopeSurplusStep({
     (g): g is Extract<typeof g, { mode: 'target' }> => g.mode === 'target',
   );
 
-  const allChosen = pending.every(p => {
-    const d = decisions.find(x => x.month === p.month && x.envelopeId === p.envelopeId);
-    if (!d) return false;
-    if (d.choice === 'savings') return Boolean(d.savingsGoalId);
-    return true;
-  });
-
   return (
     <div className="csv-step">
       <p className="csv-step-intro">You underspent on some envelopes. Where should the surplus go?</p>

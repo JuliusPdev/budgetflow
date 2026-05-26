@@ -1,8 +1,5 @@
-import { useState, useCallback } from 'react';
+import { useState } from 'react';
 import { useBudgetState } from './hooks/useBudgetState';
-import { useCsvImport } from './hooks/useCsvImport';
-import CsvImportWizard from './components/CsvImportWizard';
-import { clearImportSessions } from './utils/importStorage';
 import { getCurrentMonth } from './utils/formatting';
 import { addMonths } from './engine/smoothing';
 import { DEV_MODE } from './utils/devMode';
@@ -26,27 +23,6 @@ function App() {
 
   const state = useBudgetState(currentMonth);
   const [showSettings, setShowSettings] = useState(false);
-
-  const potAvailableForMonth = useCallback(
-    (month: Month) => {
-      const r = state.engine.months.find(m => m.month === month);
-      if (!r) return 0;
-      return r.physicalPotAfter;
-    },
-    [state.engine.months],
-  );
-
-  const csv = useCsvImport({
-    budget: state.budget,
-    currentMonth: state.currentMonth,
-    onApplyBudget: state.applyReconciliationBudget,
-    potAvailableForMonth,
-  });
-
-  function resetWorkingData(): void {
-    clearImportSessions();
-    state.resetWorkingData();
-  }
 
   // Route to onboarding if the user hasn't set up their budget yet.
   // hasCompletedSetup is true as soon as income > 0.
@@ -81,7 +57,6 @@ function App() {
         canUndo={state.canUndo}
         onUndo={state.undo}
         onOpenSettings={() => setShowSettings(true)}
-        onStartReconciliation={csv.openWizard}
         addPlannedExpense={state.addPlannedExpense}
         updatePlannedExpense={state.updatePlannedExpense}
         removePlannedExpense={state.removePlannedExpense}
@@ -97,22 +72,13 @@ function App() {
           addFixedExpense={state.addFixedExpense}
           updateFixedExpense={state.updateFixedExpense}
           removeFixedExpense={state.removeFixedExpense}
-          onStartReconciliation={csv.openWizard}
-          onResetWorkingData={resetWorkingData}
+          onResetWorkingData={state.resetWorkingData}
           onClose={() => setShowSettings(false)}
         />
       )}
-
-      <CsvImportWizard
-        csv={csv}
-        budget={state.budget}
-        engine={state.engine}
-        currentMonth={state.currentMonth}
-      />
 
     </div>
   );
 }
 
 export default App;
-

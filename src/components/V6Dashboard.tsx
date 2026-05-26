@@ -12,7 +12,8 @@ interface Props {
   canUndo: boolean;
   onUndo: () => void;
   onOpenSettings: () => void;
-  onStartReconciliation: (month?: Month) => void;
+  /** When omitted, CSV reconciliation UI is hidden (slim app). */
+  onStartReconciliation?: (month?: Month) => void;
   addPlannedExpense: (expense: Omit<PlannedExpense, 'id'>) => void;
   updatePlannedExpense: (id: string, changes: Partial<Omit<PlannedExpense, 'id'>>) => void;
   removePlannedExpense: (id: string) => void;
@@ -544,7 +545,7 @@ function HorizontalLedger({
   budget: BudgetState;
   currentMonth: Month;
   isMonthReconciled: (month: Month) => boolean;
-  onStartReconciliation: (month?: Month) => void;
+  onStartReconciliation?: (month?: Month) => void;
   updatePlannedExpense: (id: string, changes: Partial<Omit<PlannedExpense, 'id'>>) => void;
   removePlannedExpense: (id: string) => void;
   onPlanExpenseForMonth: (month: Month) => void;
@@ -610,9 +611,9 @@ function HorizontalLedger({
               <div key={month.month} className={`v6-ledger-cell ${isCurrent ? 'is-current' : ''} ${isPast ? 'is-past' : ''} ${reconciled ? 'is-reconciled' : ''}`}>
                 <strong>{shortMonth(month.month)} <span>{formatMonthYearShort(month.month)}</span></strong>
                 <small>
-                  {isCurrent ? 'Now' : reconciled ? 'Reconciled' : isPast ? 'Needs CSV' : 'Planned'}
+                  {isCurrent ? 'Now' : reconciled ? 'Reconciled' : isPast ? 'Past' : 'Planned'}
                 </small>
-                {isPast && !reconciled && (
+                {onStartReconciliation && isPast && !reconciled && (
                   <button
                     type="button"
                     className="v6-ledger-reconcile-btn"
@@ -1172,7 +1173,9 @@ export default function V6Dashboard({
   const current = getCurrentResult(engine, currentMonth);
   const priorMonth = addMonths(currentMonth, -1);
   const priorMonthNeedsReconciliation =
-    priorMonth < currentMonth && !isMonthReconciled(priorMonth);
+    onStartReconciliation != null &&
+    priorMonth < currentMonth &&
+    !isMonthReconciled(priorMonth);
   const [plannerOpen, setPlannerOpen] = useState(false);
   const [plannerInitialMonth, setPlannerInitialMonth] = useState<Month>(currentMonth);
   const timelineWidth = TIMELINE_LABEL_WIDTH + engine.months.length * TIMELINE_MONTH_WIDTH;
@@ -1227,9 +1230,11 @@ export default function V6Dashboard({
               <Undo2 size={15} /> Undo
             </button>
           )}
-          <button className="v6-btn v6-btn--ghost" onClick={() => onStartReconciliation()}>
-            Import CSV
-          </button>
+          {onStartReconciliation && (
+            <button className="v6-btn v6-btn--ghost" onClick={() => onStartReconciliation()}>
+              Import CSV
+            </button>
+          )}
           <button className="v6-btn v6-btn--ghost v6-icon-only" onClick={onOpenSettings} aria-label="Open settings">
             <Settings2 size={17} />
           </button>

@@ -10,7 +10,7 @@ interface Props {
   addFixedExpense:    (e: Omit<FixedExpense, 'id' | 'actualAmount'>) => void;
   updateFixedExpense: (id: string, changes: Partial<Omit<FixedExpense, 'id'>>) => void;
   removeFixedExpense: (id: string) => void;
-  onStartReconciliation: () => void;
+  onStartReconciliation?: () => void;
   onResetWorkingData: () => void;
   onClose:            () => void;
 }
@@ -99,19 +99,21 @@ export default function Settings({
 
         <h2 className="modal-title">Settings</h2>
 
-        <section className="settings-section">
-          <h3 className="settings-section-title">Month-end reconciliation</h3>
-          <p className="settings-hint">
-            Import your C24 bank CSV to reconcile a completed month.
-          </p>
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={() => { onStartReconciliation(); onClose(); }}
-          >
-            Import bank CSV…
-          </button>
-        </section>
+        {onStartReconciliation && (
+          <section className="settings-section">
+            <h3 className="settings-section-title">Month-end reconciliation</h3>
+            <p className="settings-hint">
+              Import your C24 bank CSV to reconcile a completed month.
+            </p>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => { onStartReconciliation(); onClose(); }}
+            >
+              Import bank CSV…
+            </button>
+          </section>
+        )}
 
         <section className="settings-section">
           <h3 className="settings-section-title">Testing reset</h3>

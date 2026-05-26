@@ -16,7 +16,7 @@ export default function CloseMonthStep({
   summariesByMonth,
   incomeUpdateResult,
   engine,
-  onClose,
+  onClose: _onClose,
 }: Props) {
   return (
     <div className="csv-step">
