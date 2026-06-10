@@ -144,9 +144,9 @@ export default function Briefing({ engine, budget, currentMonth }: Props) {
 
         {futurePlanned.length > 0
           ? futurePlanned.map(expense => {
-              // Proportional pot share: allocate the physical pot across future expenses by size.
+              // Proportional pot share: allocate the pot across future expenses by size.
               const potShare    = totalFutureAmt > 0
-                ? current.physicalPotAfter * (expense.remaining / totalFutureAmt)
+                ? current.potAfter * (expense.remaining / totalFutureAmt)
                 : 0;
               const progressPct = Math.min(100, Math.round((potShare / expense.remaining) * 100));
               const monthsUntil = monthsBetween(currentMonth, expense.targetMonth);

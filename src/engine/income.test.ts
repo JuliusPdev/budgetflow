@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { runEngine } from './smoothing';
-import { incomeForMonth, applyIncomeByMonth } from './income';
+import { additionalIncomeForMonth, incomeForMonth, applyIncomeByMonth } from './income';
 import type { BudgetState } from './types';
 
 const base: BudgetState = {
   income: 3000,
   incomeByMonth: {},
+  additionalIncomeByMonth: {},
   fixedExpenses: [{ id: 'rent', name: 'Rent', amount: 900, category: 'housing', isEnvelope: false, actualAmount: null }],
   plannedExpenses: [],
   savingsGoals: [],
@@ -17,13 +18,23 @@ const base: BudgetState = {
 };
 
 describe('income', () => {
-  it('uses incomeByMonth when set', () => {
+  it('uses incomeByMonth when set (legacy override)', () => {
     const budget: BudgetState = {
       ...base,
       incomeByMonth: { '2026-04': 2800, '2026-05': 3247 },
     };
     expect(incomeForMonth('2026-04', budget)).toBe(2800);
     expect(incomeForMonth('2026-05', budget)).toBe(3247);
+    expect(incomeForMonth('2026-06', budget)).toBe(3000);
+  });
+
+  it('adds additional income on top of the default monthly income', () => {
+    const budget: BudgetState = {
+      ...base,
+      additionalIncomeByMonth: { '2026-07': 500 },
+    };
+    expect(additionalIncomeForMonth('2026-07', budget)).toBe(500);
+    expect(incomeForMonth('2026-07', budget)).toBe(3500);
     expect(incomeForMonth('2026-06', budget)).toBe(3000);
   });
 
@@ -46,10 +57,10 @@ describe('income', () => {
     expect(next.income).toBe(3100);
   });
 
-  it('one-time income override changes only that month in the engine', () => {
+  it('additional income changes only that month in the engine', () => {
     const budget: BudgetState = {
       ...base,
-      incomeByMonth: { '2026-07': 4500 },
+      additionalIncomeByMonth: { '2026-07': 1500 },
     };
     const engine = runEngine(budget, '2026-05');
     const july = engine.months.find(m => m.month === '2026-07');

@@ -115,7 +115,7 @@ export default function Settings({
         <section className="settings-section">
           <h3 className="settings-section-title">Income</h3>
           <p className="settings-hint">
-            Default monthly income. You can override income for specific months in the planner when needed.
+            Default monthly income. Use the Inflow + button in the ledger to add extra income for specific months.
           </p>
           <div className="settings-income-row">
             <div className="input-prefix settings-income-input">

@@ -94,6 +94,7 @@ export default function Onboarding({ onComplete, onImport }: Props) {
     reconciledMonths: [],
     monthCarryAdjustments: [],
     incomeByMonth: {},
+    additionalIncomeByMonth: {},
   };
   const engineResult = runEngine(draftBudget, currentMonth);
   const baselineFreeBudget = engineResult.months.find(m => m.month === currentMonth)?.freeBudget ?? 0;

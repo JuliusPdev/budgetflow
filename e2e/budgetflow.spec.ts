@@ -131,6 +131,29 @@ test.describe('Block 3: Adding a Planned Expense', () => {
     expect(ledgerNames).toEqual(['Earlier renewal', 'Later conference']);
   });
 
+  test('3.7 Chart shows each planned expense when two share a month', async ({ page }) => {
+    await addPlannedExpense(page, 'August 2026', 'Summer trip', 800);
+    const fundingModal = page.getByTestId('mid-month-modal');
+    if (await fundingModal.isVisible()) {
+      await page.getByTestId('modal-option-2').click();
+      await page.getByRole('button', { name: 'Confirm funding choice' }).click();
+    }
+
+    await addPlannedExpense(page, 'August 2026', 'Winter coat', 400);
+    if (await fundingModal.isVisible()) {
+      await page.getByTestId('modal-option-2').click();
+      await page.getByRole('button', { name: 'Confirm funding choice' }).click();
+    }
+
+    const chart = page.locator('.v6-chart');
+    await expect(chart.getByText('Summer trip')).toBeVisible();
+    await expect(chart.getByText('Winter coat')).toBeVisible();
+    await expect(chart.getByText('2 planned')).toHaveCount(0);
+    await expect(chart.getByText('-€800')).toBeVisible();
+    await expect(chart.getByText('-€400')).toBeVisible();
+    await expect(chart.locator('.v6-chart-amount').filter({ hasText: '-€1,200' })).toBeVisible();
+  });
+
   test('3.6 Ledger month add button preselects the month', async ({ page }) => {
     await page.getByRole('button', { name: 'Plan expense for August 2026' }).click();
 

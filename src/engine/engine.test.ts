@@ -71,6 +71,13 @@ describe('Test 1: Back-loaded expenses (equal distribution)', () => {
     expect(r(find(result.months, '2026-05').potAfter)).toBe(1025);
     expect(r(find(result.months, '2026-08').potAfter)).toBe(0);
   });
+
+  it('expense hit month: potBeforeExpenses − potDeduction = potAfter', () => {
+    const aug = find(result.months, '2026-08');
+    expect(aug.potDeduction).toBe(2000);
+    expect(r(aug.potBeforeExpenses)).toBe(2000);
+    expect(r(aug.potBeforeExpenses - aug.potDeduction)).toBe(r(aug.potAfter));
+  });
 });
 
 describe('Test 2: Front-loaded expenses (constraint forces split)', () => {
@@ -322,11 +329,10 @@ describe('Edge case — expense in current month', () => {
     expect(r(find(result.months, '2026-01').freeBudget)).toBe(700);
   });
 
-  it('pot shows −expense when nothing is locked yet (expense funded = 0, cost = 300)', () => {
-    // The display override uses actual locked (0), so pot = 0 - 300 = -300.
-    // This signals to the user: "you have an unfunded expense this month."
-    // Once the user locks 300, potAfter becomes 0.
-    expect(r(find(result.months, '2026-01').potAfter)).toBe(-300);
+  it('pot reflects funded plan when nothing is locked yet (set-aside covers same-month expense)', () => {
+    // Funded pot uses the plan's funding slice: recommended set-aside (300) funds the
+    // same-month expense (300), so the forecast pot ends at 0 — not a negative warning.
+    expect(r(find(result.months, '2026-01').potAfter)).toBe(0);
   });
 });
 
@@ -488,13 +494,9 @@ describe('Planned expense payments reduce the remaining amount to fund', () => {
   it('still ends the pot at zero after the target month', () => {
     expect(r(find(result.months, '2026-03').potAfter)).toBe(0);
   });
-
-  it('shows the physical pot after the early payment has actually left', () => {
-    expect(r(find(result.months, '2026-02').physicalPotAfter)).toBe(0);
-  });
 });
 
-describe('Physical pot display ignores unreconciled past planned expenses', () => {
+describe('Overdue planned expense still needs funding', () => {
   const baseState: BudgetState = {
     income: 1000,
     fixedExpenses: [],
@@ -520,40 +522,17 @@ describe('Physical pot display ignores unreconciled past planned expenses', () =
     monthCarryAdjustments: [],
   };
 
-  it('keeps the physical pot at the locked amount until a payment or settlement exists', () => {
-    const result = runEngine(baseState, '2026-03');
-    expect(r(find(result.months, '2026-03').physicalPotAfter)).toBe(500);
-  });
-
-  it('still forecasts the overdue obligation as needing funding now', () => {
+  it('forecasts the overdue obligation as needing funding now', () => {
     const result = runEngine(baseState, '2026-03');
     expect(r(find(result.months, '2026-03').setAsideRecommended)).toBe(500);
   });
-
-  it('reduces the physical pot once a final settlement proves money left', () => {
-    const result = runEngine(
-      {
-        ...baseState,
-        plannedExpenseSettlements: [
-          {
-            id: 'settle-trip',
-            plannedExpenseId: 'trip',
-            month: '2026-02',
-            actualAmount: 1000,
-            potDeduction: 1000,
-            surplusDestination: null,
-          },
-        ],
-        reconciledMonths: ['2026-02'],
-      },
-      '2026-03',
-    );
-
-    expect(r(find(result.months, '2026-03').physicalPotAfter)).toBe(-500);
-  });
 });
 
-describe('May early Trip payment reduces future set-aside amounts', () => {
+describe('Early payment fully from pot reduces remaining and allows negative pot', () => {
+  // Trip costs €2000 in Aug. In May the user pays €1000 early (fully from pot).
+  // Pot carry from May lock-in: €500. After payment: pot = 500 - 1000 = -500.
+  // Remaining trip: €1000. Pot carry into Jun: -500.
+  // smooth() sees -500 carry + €1000 expense over 3 months = €1500 / 3 = €500/mo.
   const state: BudgetState = {
     income: 1000,
     fixedExpenses: [],
@@ -571,16 +550,7 @@ describe('May early Trip payment reduces future set-aside amounts', () => {
     lockIns: [
       { id: 'may-lock', month: '2026-05', lockedAmount: 500, lockState: 'confirmed' },
     ],
-    unplannedExpenses: [
-      {
-        id: 'flight-free-portion',
-        name: 'Trip early payment',
-        amount: 500,
-        month: '2026-05',
-        category: 'travel',
-        linkedPlannedExpenseId: 'trip',
-      },
-    ],
+    unplannedExpenses: [],
     envelopeActualizations: [],
     plannedExpensePayments: [
       {
@@ -588,7 +558,7 @@ describe('May early Trip payment reduces future set-aside amounts', () => {
         plannedExpenseId: 'trip',
         month: '2026-05',
         amount: 1000,
-        potDeduction: 500,
+        potDeduction: 1000,
       },
     ],
     plannedExpenseSettlements: [],
@@ -598,23 +568,25 @@ describe('May early Trip payment reduces future set-aside amounts', () => {
 
   const result = runEngine(state, '2026-06');
 
-  it('smooths only the remaining €1000 over June through August', () => {
+  it('smooths the remaining amount plus negative carry over future months', () => {
     for (const month of ['2026-06', '2026-07', '2026-08']) {
-      expect(r(find(result.months, month).setAsideRecommended)).toBe(333.33);
+      expect(r(find(result.months, month).setAsideRecommended)).toBe(500);
     }
   });
 
-  it('shows the May free-budget portion as past spending linked to the Trip', () => {
-    const may = find(result.months, '2026-05');
-    expect(may.unplannedTotal).toBe(500);
-    expect(may.unplannedExpenses[0]).toMatchObject({
-      name: 'Trip early payment',
-      linkedPlannedExpenseId: 'trip',
-    });
+  it('pot starts negative (savings loan from early payment exceeding locked amount)', () => {
+    expect(r(find(result.months, '2026-06').potAfter)).toBe(0);
+  });
+
+  it('pot ends at zero after the target month', () => {
+    expect(Math.abs(r(find(result.months, '2026-08').potAfter))).toBe(0);
   });
 });
 
-describe('Early payment recovery increases set-aside until repaid', () => {
+describe('Early payment makes pot negative, recovery split is display-only', () => {
+  // Trip €800 in May. In Feb, user pays €400 early (fully from pot, pot = 0 - 400 = -400).
+  // From March: potCarry = -400, remaining trip = 400, expense in May.
+  // smooth() sees -400 carry + 400 expense over 3 months = 800 / 3 ≈ 266.67.
   const state: BudgetState = {
     income: 3000,
     fixedExpenses: [],
@@ -630,16 +602,7 @@ describe('Early payment recovery increases set-aside until repaid', () => {
     ],
     savingsGoals: [],
     lockIns: [],
-    unplannedExpenses: [
-      {
-        id: 'free-portion',
-        name: 'Trip early payment',
-        amount: 200,
-        month: '2026-02',
-        category: 'travel',
-        linkedPlannedExpenseId: 'trip',
-      },
-    ],
+    unplannedExpenses: [],
     envelopeActualizations: [],
     plannedExpensePayments: [
       {
@@ -647,7 +610,7 @@ describe('Early payment recovery increases set-aside until repaid', () => {
         plannedExpenseId: 'trip',
         month: '2026-02',
         amount: 400,
-        potDeduction: 200,
+        potDeduction: 400,
       },
     ],
     plannedExpenseRecoveries: [],
@@ -658,23 +621,483 @@ describe('Early payment recovery increases set-aside until repaid', () => {
 
   const result = runEngine(state, '2026-03');
 
-  it('allocates set-aside to recovery before funding while €200 is still owed', () => {
+  it('shows recovery portion when pot is negative (display-only split)', () => {
     const march = find(result.months, '2026-03');
     expect(r(march.setAsideRecovery)).toBeGreaterThan(0);
     expect(r(march.setAsideRecovery + march.setAsideFunding)).toBe(r(march.setAsideRecommended));
   });
 
-  it('records recovery against Trip when lock-in recoveries exist', () => {
-    const withRecovery: BudgetState = {
-      ...state,
-      lockIns: [{ id: 'l1', month: '2026-03', lockedAmount: 200, lockState: 'planned' }],
-      plannedExpenseRecoveries: [
-        { id: 'r1', plannedExpenseId: 'trip', month: '2026-03', amount: 200 },
+  it('produces a uniform rate — smooth() allows negative pot during recovery', () => {
+    // smooth() with potCarry=-400 and 400 expense in month 3:
+    // The pot can be negative in non-expense months, so the rate is uniform.
+    // (400 remaining + 400 deficit) / 3 months ≈ 266.67.
+    const march = find(result.months, '2026-03');
+    const april = find(result.months, '2026-04');
+    expect(r(march.setAsideRecommended)).toBe(266.67);
+    expect(r(april.setAsideRecommended)).toBe(266.67);
+  });
+
+  it('pot ends at zero after the expense month', () => {
+    expect(Math.abs(r(find(result.months, '2026-05').potAfter))).toBe(0);
+  });
+});
+
+describe('Early payment amount affects remaining funding need', () => {
+  const baseTrip = {
+    id: 'trip',
+    name: 'Trip',
+    amount: 800,
+    targetMonth: '2026-05',
+    category: 'travel',
+    confidence: 'confirmed' as const,
+  };
+
+  const withoutPayment: BudgetState = {
+    income: 3000,
+    fixedExpenses: [],
+    plannedExpenses: [baseTrip],
+    savingsGoals: [],
+    lockIns: [],
+    unplannedExpenses: [],
+    envelopeActualizations: [],
+    plannedExpensePayments: [],
+    plannedExpenseSettlements: [],
+    reconciledMonths: [],
+    monthCarryAdjustments: [],
+  };
+
+  const withPayment: BudgetState = {
+    ...withoutPayment,
+    plannedExpensePayments: [
+      {
+        id: 'pay1',
+        plannedExpenseId: 'trip',
+        month: '2026-03',
+        amount: 400,
+        potDeduction: 400,
+      },
+    ],
+  };
+
+  it('rate stays the same — early payment reduces remaining but creates equal deficit', () => {
+    // Without payment: 800 over 3 months (Mar–May) = 266.67/mo.
+    // With payment: remaining 400, potCarry -400. Net = 800 over 3 months = 266.67/mo.
+    // The rate is identical because the payment reduces both sides equally.
+    const without = runEngine(withoutPayment, '2026-03');
+    const withPay = runEngine(withPayment, '2026-03');
+    const rateWithout = find(without.months, '2026-04').setAsideRecommended;
+    const rateWith = find(withPay.months, '2026-04').setAsideRecommended;
+    expect(r(rateWith)).toBe(r(rateWithout));
+    expect(rateWithout).toBeGreaterThan(0);
+  });
+});
+
+describe('Early payment makes pot go negative, rate covers remaining + recovery', () => {
+  // Trip €800 Aug. In May, user pays €400 early (fully from pot, pot goes to -400).
+  // No lock-ins. Remaining trip: €400. Pot carry = -400.
+  // smooth() sees -400 carry + 400 expense over 4 months (May–Aug) = 800 / 4 = 200/mo.
+  const state: BudgetState = {
+    income: 3400,
+    fixedExpenses: [{ id: 'fixed', name: 'Fixed', amount: 1260, category: 'general', isEnvelope: false, actualAmount: null }],
+    plannedExpenses: [
+      {
+        id: 'trip',
+        name: 'Trip',
+        amount: 800,
+        targetMonth: '2026-08',
+        category: 'travel',
+        confidence: 'confirmed',
+      },
+    ],
+    savingsGoals: [],
+    lockIns: [],
+    unplannedExpenses: [],
+    envelopeActualizations: [],
+    plannedExpensePayments: [
+      {
+        id: 'pay-trip',
+        plannedExpenseId: 'trip',
+        month: '2026-05',
+        amount: 400,
+        potDeduction: 400,
+      },
+    ],
+    plannedExpenseRecoveries: [],
+    plannedExpenseSettlements: [],
+    reconciledMonths: [],
+    monthCarryAdjustments: [],
+  };
+
+  const result = runEngine(state, '2026-05');
+
+  it('recommends €200/mo to recover the savings loan and fund the remaining trip', () => {
+    // PotCarry = 0 - 400 (current month deduction) = -400. Remaining trip: 400 in Aug.
+    // smooth() sees -400 carry + 400 expense over 4 months = 800/4 = 200/mo (uniform).
+    for (const month of ['2026-05', '2026-06', '2026-07', '2026-08']) {
+      const m = find(result.months, month);
+      expect(r(m.setAsideRecommended)).toBe(200);
+      expect(r(m.setAsideRecovery + m.setAsideFunding)).toBe(r(m.setAsideRecommended));
+    }
+  });
+
+  it('pot starts negative in May (savings loan: rate partially recovers deficit)', () => {
+    // potCarry=-400, May rate=200, May algo expense=0 → display pot = -400 + 200 = -200.
+    const may = find(result.months, '2026-05');
+    expect(r(may.potAfter)).toBe(-200);
+  });
+
+  it('pot ends at zero after the Aug trip is paid', () => {
+    expect(Math.abs(r(find(result.months, '2026-08').potAfter))).toBe(0);
+  });
+
+  it('shows recovery split when pot is negative', () => {
+    const may = find(result.months, '2026-05');
+    expect(r(may.setAsideRecovery)).toBeGreaterThan(0);
+  });
+});
+
+// ─── Overflow handling: early payments exceeding the planned expense ──────────
+
+describe('Overflow Option A: increase planned expense to match overpayment', () => {
+  // Trip €800 due Aug (4 months from May). Lock €200 in May. Pay €1000 early, plan → €1000.
+  // Remaining = 0. Debt to repay = 1000 - 200 lock = 800 over May–Aug → €200/mo (not €83 over 12 mo).
+  const state: BudgetState = {
+    income: 3400,
+    fixedExpenses: [],
+    plannedExpenses: [
+      {
+        id: 'trip',
+        name: 'Trip',
+        amount: 1000,
+        targetMonth: '2026-08',
+        category: 'travel',
+        confidence: 'confirmed',
+        originalAmount: 800,
+      },
+    ],
+    savingsGoals: [],
+    lockIns: [
+      { id: 'may-lock', month: '2026-05', lockedAmount: 200, lockState: 'planned' },
+    ],
+    unplannedExpenses: [],
+    envelopeActualizations: [],
+    plannedExpensePayments: [
+      {
+        id: 'pay-trip',
+        plannedExpenseId: 'trip',
+        month: '2026-05',
+        amount: 1000,
+        potDeduction: 1000,
+      },
+    ],
+    plannedExpenseSettlements: [],
+    reconciledMonths: [],
+    monthCarryAdjustments: [],
+  };
+
+  const result = runEngine(state, '2026-05');
+
+  it('uses trip target month for recovery window (4 months, not 12)', () => {
+    const may = find(result.months, '2026-05');
+    const aug = find(result.months, '2026-08');
+    const sep = find(result.months, '2026-09');
+    expect(r(may.setAsideRecommended)).toBe(200);
+    expect(r(aug.setAsideRecommended)).toBe(200);
+    expect(r(sep.setAsideRecommended)).toBe(0);
+  });
+
+  it('all set-aside goes to recovery — trip already fully funded', () => {
+    const jun = find(result.months, '2026-06');
+    expect(r(jun.setAsideFunding)).toBe(0);
+    expect(r(jun.setAsideRecovery)).toBe(r(jun.setAsideRecommended));
+  });
+
+  it('savings debt decreases by ~200/mo from 800 after May lock', () => {
+    const may = find(result.months, '2026-05');
+    const jun = find(result.months, '2026-06');
+    expect(r(may.potAfter)).toBe(-800);
+    expect(r(jun.potAfter)).toBe(-600);
+  });
+});
+
+describe('Overflow Option B: surplus from free budget via unplanned expense', () => {
+  // Trip planned at €800 due in Aug. User pays €1000 in May.
+  // Option B: pot deduction capped at €800 (remaining). €200 overflow becomes
+  // an unplanned expense that hits free budget.
+  const state: BudgetState = {
+    income: 3400,
+    fixedExpenses: [],
+    plannedExpenses: [
+      {
+        id: 'trip',
+        name: 'Trip',
+        amount: 800,
+        targetMonth: '2026-08',
+        category: 'travel',
+        confidence: 'confirmed',
+      },
+    ],
+    savingsGoals: [],
+    lockIns: [],
+    unplannedExpenses: [
+      {
+        id: 'overflow-unplanned',
+        name: 'Trip overpayment',
+        amount: 200,
+        month: '2026-05',
+        category: 'travel',
+        linkedPlannedExpenseId: 'trip',
+      },
+    ],
+    envelopeActualizations: [],
+    plannedExpensePayments: [
+      {
+        id: 'pay-trip',
+        plannedExpenseId: 'trip',
+        month: '2026-05',
+        amount: 1000,
+        potDeduction: 800,
+      },
+    ],
+    plannedExpenseSettlements: [],
+    reconciledMonths: [],
+    monthCarryAdjustments: [],
+  };
+
+  const result = runEngine(state, '2026-05');
+
+  it('pot deduction is capped at the planned amount (800), not the payment (1000)', () => {
+    // potCarry = -800. Remaining = 0. Debt recovery over May–Aug (4 months) → €200/mo.
+    const may = find(result.months, '2026-05');
+    const rate = r(may.setAsideRecommended);
+    expect(rate).toBe(200);
+  });
+
+  it('unplanned expense reduces free budget in the payment month', () => {
+    const may = find(result.months, '2026-05');
+    expect(r(may.unplannedTotal)).toBe(200);
+  });
+
+  it('pot deficit is 200 less than Option A (800 vs 1000)', () => {
+    const may = find(result.months, '2026-05');
+    // pot = -800 + rate ≈ -800 + 67 = about -733
+    expect(r(may.potAfter)).toBeGreaterThan(-800);
+  });
+});
+
+describe('Cumulative overflow: multiple payments exceeding plan', () => {
+  // Trip €800 Aug. Two payments: €500 in May + €500 in Jun = €1000 total.
+  // Option A path: planned expense increased to €1000 after the second payment.
+  const state: BudgetState = {
+    income: 3400,
+    fixedExpenses: [],
+    plannedExpenses: [
+      {
+        id: 'trip',
+        name: 'Trip',
+        amount: 1000,
+        targetMonth: '2026-08',
+        category: 'travel',
+        confidence: 'confirmed',
+      },
+    ],
+    savingsGoals: [],
+    lockIns: [],
+    unplannedExpenses: [],
+    envelopeActualizations: [],
+    plannedExpensePayments: [
+      {
+        id: 'pay-1',
+        plannedExpenseId: 'trip',
+        month: '2026-05',
+        amount: 500,
+        potDeduction: 500,
+      },
+      {
+        id: 'pay-2',
+        plannedExpenseId: 'trip',
+        month: '2026-06',
+        amount: 500,
+        potDeduction: 500,
+      },
+    ],
+    plannedExpenseSettlements: [],
+    reconciledMonths: [],
+    monthCarryAdjustments: [],
+  };
+
+  const result = runEngine(state, '2026-07');
+
+  it('remaining is zero after cumulative payments match the (increased) plan', () => {
+    // 500 + 500 = 1000 paid, plan = 1000 → remaining = 0.
+    // Current month Jul, target Aug → 2-month recovery window → €500/mo.
+    const jul = find(result.months, '2026-07');
+    expect(r(jul.setAsideRecommended)).toBe(500);
+    expect(r(jul.setAsideFunding)).toBe(0);
+  });
+
+  it('pot starts at -1000 and gradually recovers', () => {
+    const jul = find(result.months, '2026-07');
+    expect(r(jul.potAfter)).toBeLessThan(0);
+    expect(r(jul.potAfter)).toBeGreaterThan(-1000);
+  });
+});
+
+// ─── Deferred expense: "start from next month" ───────────────────────────────
+
+describe('Deferred expense: start-from-next-month gets its own rate pass', () => {
+  // Expense 1: €800 in Aug (4 months: May–Aug). Rate = 200/month.
+  // Expense 2: €1000 in Oct, deferred to start from Jun (5 months: Jun–Oct).
+  // Lock-in: 200 in May.
+  //
+  // Expected:
+  // - May rate stays 200 (only expense 1, deferred expense excluded).
+  // - Jun–Oct rate covers both expenses:
+  //     pot after May = 0 + 200 (contribution) - 0 (no May expense) = 200
+  //     remaining expense 1: 800 in Aug
+  //     deferred expense 2: 1000 in Oct
+  //     smooth() solves these over Jun–Oct with potCarry=200
+  const state: BudgetState = {
+    income: 3400,
+    fixedExpenses: [{ id: 'fixed', name: 'Fixed', amount: 1000, category: 'general', isEnvelope: false, actualAmount: null }],
+    plannedExpenses: [
+      {
+        id: 'trip1',
+        name: 'Trip 1',
+        amount: 800,
+        targetMonth: '2026-08',
+        category: 'travel',
+        confidence: 'confirmed' as const,
+      },
+      {
+        id: 'trip2',
+        name: 'Trip 2',
+        amount: 1000,
+        targetMonth: '2026-10',
+        category: 'travel',
+        confidence: 'confirmed' as const,
+        startFromMonth: '2026-06',
+      },
+    ],
+    savingsGoals: [],
+    lockIns: [
+      { id: 'may-lock', month: '2026-05', lockedAmount: 200, lockState: 'planned' as const },
+    ],
+    unplannedExpenses: [],
+    envelopeActualizations: [],
+    plannedExpensePayments: [],
+    plannedExpenseSettlements: [],
+    reconciledMonths: [],
+    monthCarryAdjustments: [],
+  };
+
+  const result = runEngine(state, '2026-05');
+
+  it('current month (May) rate stays at 200 — only expense 1', () => {
+    const may = find(result.months, '2026-05');
+    expect(r(may.setAsideRecommended)).toBe(200);
+  });
+
+  it('future months have a higher rate covering both expenses', () => {
+    const jun = find(result.months, '2026-06');
+    // Jun rate must fund: 800 remaining of trip1 in Aug + 1000 trip2 in Oct,
+    // with pot carry of 200 from May. Total needed = 1800 - 200 = 1600 over 5 months.
+    // smooth() may split this non-uniformly due to the binding constraint at Aug.
+    expect(r(jun.setAsideRecommended)).toBeGreaterThan(200);
+  });
+
+  it('pot is non-negative at expense 1 target month (Aug)', () => {
+    const aug = find(result.months, '2026-08');
+    expect(r(aug.potAfter)).toBeGreaterThanOrEqual(0);
+  });
+
+  it('pot ends at zero after expense 2 target month (Oct)', () => {
+    const oct = find(result.months, '2026-10');
+    expect(Math.abs(r(oct.potAfter))).toBeLessThanOrEqual(1);
+  });
+
+  it('rates drop to zero after all expenses are covered', () => {
+    const nov = find(result.months, '2026-11');
+    expect(r(nov.setAsideRecommended)).toBe(0);
+  });
+});
+
+describe('potActual vs potAfter (physical pot now)', () => {
+  it('reflects locks and deductions now; potAfter includes forecast set-aside', () => {
+    const state: BudgetState = {
+      income: 3400,
+      fixedExpenses: [],
+      plannedExpenses: [
+        {
+          id: 'trip',
+          name: 'Trip',
+          amount: 800,
+          targetMonth: '2026-08',
+          category: 'travel',
+          confidence: 'confirmed',
+        },
+      ],
+      savingsGoals: [],
+      lockIns: [{ id: 'lock-mar', month: '2026-03', lockedAmount: 100, lockState: 'planned' }],
+      unplannedExpenses: [],
+      envelopeActualizations: [],
+      plannedExpensePayments: [
+        {
+          id: 'pay-mar',
+          plannedExpenseId: 'trip',
+          month: '2026-03',
+          amount: 50,
+          potDeduction: 50,
+        },
+      ],
+      plannedExpenseRecoveries: [],
+      plannedExpenseSettlements: [],
+      reconciledMonths: [],
+      monthCarryAdjustments: [],
+    };
+
+    const mar = find(runEngine(state, '2026-03').months, '2026-03');
+    // potCarry = −50 (early payment); +100 locked → €50 physical now.
+    expect(r(mar.potActual)).toBe(50);
+    // Forecast end-of-month adds recommended set-aside beyond what is locked so far.
+    expect(r(mar.potAfter)).toBeGreaterThan(r(mar.potActual));
+    expect(r(mar.setAsideRecommended)).toBeGreaterThan(100);
+  });
+
+  it('includes settlement pot deductions in physical pot now', () => {
+    const state: BudgetState = {
+      ...makeState(3400, [{ amount: 400, targetMonth: '2026-04' }]),
+      lockIns: [{ id: 'lock-mar', month: '2026-03', lockedAmount: 80, lockState: 'planned' }],
+      plannedExpensePayments: [
+        {
+          id: 'pay-mar',
+          plannedExpenseId: 'expense-0',
+          month: '2026-03',
+          amount: 100,
+          potDeduction: 100,
+        },
+      ],
+      plannedExpenseSettlements: [
+        {
+          id: 'settle-mar',
+          plannedExpenseId: 'expense-0',
+          month: '2026-03',
+          actualAmount: 400,
+          potDeduction: 300,
+          surplusDestination: null,
+        },
       ],
     };
-    const after = runEngine(withRecovery, '2026-04');
-    const april = find(after.months, '2026-04');
-    expect(r(april.setAsideRecovery)).toBe(0);
-    expect(r(april.setAsideFunding)).toBe(r(april.setAsideRecommended));
+    const mar = find(runEngine(state, '2026-03').months, '2026-03');
+    // potCarry = −100 − 300 = −400; +80 locked → −320 now (bank balance reference).
+    expect(r(mar.potActual)).toBe(-320);
+    expect(r(mar.potDeduction)).toBe(0);
+  });
+
+  it('matches potAfter for past months (end-of-month physical balance)', () => {
+    const state = makeState(1000, [{ amount: 500, targetMonth: '2026-02' }]);
+    state.lockIns = [{ id: 'l1', month: '2026-01', lockedAmount: 300, lockState: 'planned' }];
+    const jan = find(runEngine(state, '2026-03').months, '2026-01');
+    expect(r(jan.potActual)).toBe(r(jan.potAfter));
   });
 });

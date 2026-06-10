@@ -1,9 +1,19 @@
 import type { BudgetState, Month } from './types';
 
-/** Confirmed or planned income for a calendar month (falls back to budget.income). */
+/** Extra income on top of the default monthly income for one calendar month. */
+export function additionalIncomeForMonth(month: Month, budget: BudgetState): number {
+  return budget.additionalIncomeByMonth?.[month] ?? 0;
+}
+
+/** Total planned income for a calendar month. */
 export function incomeForMonth(month: Month, budget: BudgetState): number {
+  const additional = additionalIncomeForMonth(month, budget);
+  if (additional > 0) return budget.income + additional;
+
+  // Legacy full-month override from older planner saves or CSV settlement.
   const override = budget.incomeByMonth?.[month];
   if (override !== undefined && override > 0) return override;
+
   return budget.income;
 }
 

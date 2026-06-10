@@ -214,7 +214,7 @@ export default function CurrentMonthManager({
         >
           Pot
         </span>
-        <span className="mc-pot-amount num">{formatCurrency(result.physicalPotAfter)}</span>
+        <span className="mc-pot-amount num">{formatCurrency(result.potAfter)}</span>
       </div>
 
     </div>

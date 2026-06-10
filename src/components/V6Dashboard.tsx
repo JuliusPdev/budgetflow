@@ -1,13 +1,34 @@
-import { useEffect, useRef, useState } from 'react';
-import { Settings2, Undo2, X } from 'lucide-react';
-import { addMonths, runEngine } from '../engine/smoothing';
-import { fundingProgressForExpense } from '../engine/plannedExpenseRecovery';
-import { formatCurrency, formatCurrencyExact, formatMonth } from '../utils/formatting';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { ChevronDown, ChevronRight, Settings2, Undo2, X } from 'lucide-react';
+import { runEngine } from '../engine/smoothing';
+import { formatCurrency, formatCurrencyExact, formatMonth, formatSignedCurrency } from '../utils/formatting';
+import {
+  PlannedExpenseFundingModal,
+  shouldAskPlannedExpenseFundingTiming,
+} from './PlannedExpenseFundingModal';
 import {
   plannedExpenseLedgerCell,
   setAsideLedgerAmount,
 } from '../utils/ledgerDisplay';
-import type { BudgetState, EngineOutput, Month, MonthResult, PlannedExpense } from '../engine/types';
+import {
+  buildPlannedExpenseMarkers,
+  chartPadTop,
+  CHART_HIT_MARKER,
+  CHART_ITEM_GAP,
+  CHART_NAME_TO_AMOUNT,
+  CHART_TOTAL_ABOVE_DOT,
+  comparePlannedExpensesByTime,
+  layoutExpenseLabels,
+  type PlannedExpenseChartMarker,
+} from './potChartMarkers';
+import type {
+  BudgetState,
+  EngineOutput,
+  Month,
+  MonthResult,
+  PlannedExpense,
+  PlannedExpensePayment,
+} from '../engine/types';
 
 interface Props {
   engine: EngineOutput;
@@ -19,9 +40,11 @@ interface Props {
   addPlannedExpense: (expense: Omit<PlannedExpense, 'id'>) => void;
   updatePlannedExpense: (id: string, changes: Partial<Omit<PlannedExpense, 'id'>>) => void;
   removePlannedExpense: (id: string) => void;
-  setIncomeForMonth: (month: Month, amount: number) => void;
-  clearIncomeForMonth: (month: Month) => void;
-  recordEarlyPayment: (plannedExpenseId: string, paymentMonth: Month, amount: number) => void;
+  setAdditionalIncomeForMonth: (month: Month, amount: number) => void;
+  clearAdditionalIncomeForMonth: (month: Month) => void;
+  recordEarlyPayment: (plannedExpenseId: string, paymentMonth: Month, amount: number, overflowToFreeBudget?: number) => void;
+  updateEarlyPayment: (paymentId: string, amount: number, overflowToFreeBudget?: number) => void;
+  removeEarlyPayment: (paymentId: string) => void;
   lockIn: (amount: number) => void;
   freeUp: (amount: number) => void;
 }
@@ -32,11 +55,50 @@ interface Point {
 }
 
 const TIMELINE_LABEL_WIDTH = 200;
-const TIMELINE_MONTH_WIDTH = 92;
+const TIMELINE_MONTH_MIN_WIDTH = 72;
+const TIMELINE_MONTH_DEFAULT_WIDTH = 92;
+/** Within a month column: plateau before expense, marker at hit, end-of-month balance. */
+const CHART_HIT_PLATEAU = 0.35;
+const CHART_MONTH_END = 0.85;
 
-function timelineGridColumns(monthCount: number): { gridTemplateColumns: string } {
+function timelineGridColumns(
+  monthCount: number,
+  monthWidth: number,
+): { gridTemplateColumns: string } {
   return {
-    gridTemplateColumns: `${TIMELINE_LABEL_WIDTH}px repeat(${monthCount}, ${TIMELINE_MONTH_WIDTH}px)`,
+    gridTemplateColumns: `${TIMELINE_LABEL_WIDTH}px repeat(${monthCount}, ${monthWidth}px)`,
+  };
+}
+
+function timelineTotalWidth(monthCount: number, monthWidth: number): number {
+  return TIMELINE_LABEL_WIDTH + monthCount * monthWidth;
+}
+
+/** Stretch month columns to fill the timeline card; scroll only when months need more than min width. */
+function useTimelineMonthWidth(monthCount: number) {
+  const containerRef = useRef<HTMLElement>(null);
+  const [monthWidth, setMonthWidth] = useState(TIMELINE_MONTH_DEFAULT_WIDTH);
+
+  useEffect(() => {
+    const element = containerRef.current;
+    if (!element || monthCount === 0) return;
+
+    function updateWidth() {
+      const available = element!.clientWidth - TIMELINE_LABEL_WIDTH;
+      const computed = Math.floor(available / monthCount);
+      setMonthWidth(Math.max(TIMELINE_MONTH_MIN_WIDTH, computed));
+    }
+
+    updateWidth();
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [monthCount]);
+
+  return {
+    containerRef,
+    monthWidth,
+    timelineWidth: timelineTotalWidth(monthCount, monthWidth),
   };
 }
 
@@ -107,6 +169,173 @@ function smoothPath(points: Point[]): string {
   return path;
 }
 
+function monthChartX(padLeft: number, monthWidth: number, index: number, fraction: number): number {
+  return padLeft + index * monthWidth + monthWidth * fraction;
+}
+
+function buildPotLinePoints(
+  months: MonthResult[],
+  padLeft: number,
+  monthWidth: number,
+  yForPotPositive: (amount: number) => number,
+): Point[] {
+  const points: Point[] = [];
+  for (let index = 0; index < months.length; index++) {
+    const month = months[index];
+    if (month.potDeduction <= 0.001) {
+      points.push({
+        x: monthChartX(padLeft, monthWidth, index, 0.5),
+        y: yForPotPositive(Math.max(0, month.potAfter)),
+      });
+      continue;
+    }
+    const before = Math.max(0, month.potBeforeExpenses);
+    const after = Math.max(0, month.potAfter);
+    points.push({
+      x: monthChartX(padLeft, monthWidth, index, CHART_HIT_PLATEAU),
+      y: yForPotPositive(before),
+    });
+    points.push({
+      x: monthChartX(padLeft, monthWidth, index, CHART_HIT_MARKER),
+      y: yForPotPositive(before),
+    });
+    points.push({
+      x: monthChartX(padLeft, monthWidth, index, CHART_MONTH_END),
+      y: yForPotPositive(after),
+    });
+  }
+  return points;
+}
+
+function buildDebtLinePoints(
+  months: MonthResult[],
+  padLeft: number,
+  monthWidth: number,
+  zeroY: number,
+  yForDebt: (amount: number) => number,
+): Point[] {
+  const points: Point[] = [];
+  for (let index = 0; index < months.length; index++) {
+    const month = months[index];
+    const yForSigned = (signed: number) => (signed < 0 ? yForDebt(signed) : zeroY);
+
+    if (month.potDeduction <= 0.001) {
+      const signed = Math.min(0, month.potAfter);
+      points.push({
+        x: monthChartX(padLeft, monthWidth, index, 0.5),
+        y: yForSigned(signed),
+      });
+      continue;
+    }
+
+    const beforeSigned = Math.min(0, month.potBeforeExpenses);
+    const afterSigned = Math.min(0, month.potAfter);
+    points.push({
+      x: monthChartX(padLeft, monthWidth, index, CHART_HIT_PLATEAU),
+      y: yForSigned(beforeSigned),
+    });
+    points.push({
+      x: monthChartX(padLeft, monthWidth, index, CHART_HIT_MARKER),
+      y: yForSigned(beforeSigned),
+    });
+    points.push({
+      x: monthChartX(padLeft, monthWidth, index, CHART_MONTH_END),
+      y: yForSigned(afterSigned),
+    });
+  }
+  return points;
+}
+
+function ChartPlannedExpenseHit({
+  marker,
+  zeroY,
+}: {
+  marker: PlannedExpenseChartMarker;
+  zeroY: number;
+}) {
+  const isMulti = marker.expenses.length > 1;
+  const totalY = marker.y - CHART_TOTAL_ABOVE_DOT;
+  const labelPositions = isMulti
+    ? layoutExpenseLabels(totalY, marker.expenses.length)
+    : [];
+
+  return (
+    <g className="v6-chart-hit">
+      <line
+        x1={marker.x}
+        x2={marker.x}
+        y1={marker.y + 9}
+        y2={zeroY}
+        stroke="var(--color-irregular)"
+        strokeDasharray="1 5"
+        opacity="0.28"
+      />
+      <circle
+        cx={marker.x}
+        cy={marker.y}
+        r="6"
+        fill="var(--color-irregular)"
+        stroke="var(--bg-card)"
+        strokeWidth="2.5"
+      />
+      {isMulti ? (
+        <>
+          {marker.expenses.map((expense, index) => {
+            const { nameY, amountY } = labelPositions[index];
+            return (
+              <g key={`${marker.month}-${expense.name}-${index}`}>
+                <text
+                  x={marker.x}
+                  y={nameY}
+                  textAnchor="middle"
+                  className="v6-chart-expense-name"
+                >
+                  {expense.name}
+                </text>
+                <text
+                  x={marker.x}
+                  y={amountY}
+                  textAnchor="middle"
+                  className="v6-chart-expense-amount"
+                >
+                  -{formatCurrency(expense.amount)}
+                </text>
+              </g>
+            );
+          })}
+          <text
+            x={marker.x}
+            y={totalY}
+            textAnchor="middle"
+            className="v6-chart-amount"
+          >
+            -{formatCurrency(marker.totalAmount)}
+          </text>
+        </>
+      ) : (
+        <>
+          <text
+            x={marker.x}
+            y={totalY - CHART_ITEM_GAP - CHART_NAME_TO_AMOUNT}
+            textAnchor="middle"
+            className="v6-chart-label"
+          >
+            {marker.expenses[0]?.name ?? ''}
+          </text>
+          <text
+            x={marker.x}
+            y={totalY}
+            textAnchor="middle"
+            className="v6-chart-amount"
+          >
+            -{formatCurrency(marker.totalAmount)}
+          </text>
+        </>
+      )}
+    </g>
+  );
+}
+
 function V6Chip({ tone = 'dim', children }: { tone?: 'dim' | 'peri' | 'green' | 'amber' | 'red'; children: React.ReactNode }) {
   return <span className={`v6-chip v6-chip--${tone}`}>{children}</span>;
 }
@@ -117,34 +346,6 @@ function getCurrentResult(engine: EngineOutput, currentMonth: Month): MonthResul
 
 function getSpentThisMonth(current: MonthResult | undefined): number {
   return current?.unplannedTotal ?? 0;
-}
-
-function comparePlannedExpensesByTime(a: PlannedExpense, b: PlannedExpense): number {
-  const monthOrder = a.targetMonth.localeCompare(b.targetMonth);
-  if (monthOrder !== 0) return monthOrder;
-  const nameOrder = a.name.localeCompare(b.name);
-  if (nameOrder !== 0) return nameOrder;
-  return a.id.localeCompare(b.id);
-}
-
-function getCurrentLockedAmount(budget: BudgetState, currentMonth: Month): number {
-  return budget.lockIns
-    .filter(lock => lock.month === currentMonth)
-    .reduce((sum, lock) => sum + lock.lockedAmount, 0);
-}
-
-function getFirstFutureRate(engine: EngineOutput, currentMonth: Month): number {
-  return engine.months.find(month => month.month > currentMonth && month.setAsideRecommended > 0)?.setAsideRecommended ?? 0;
-}
-
-function countMonthsInclusive(startMonth: Month, endMonth: Month): number {
-  let count = 0;
-  let cursor = startMonth;
-  while (cursor <= endMonth) {
-    count++;
-    cursor = addMonths(cursor, 1);
-  }
-  return count;
 }
 
 interface InlineFormProps {
@@ -189,41 +390,51 @@ function InlineAmountForm({ label, prefill, confirmText, onConfirm, onCancel }: 
   );
 }
 
-function PotTrajectoryChart({ engine, currentMonth }: { engine: EngineOutput; currentMonth: Month }) {
+function PotTrajectoryChart({
+  engine,
+  currentMonth,
+  monthWidth,
+}: {
+  engine: EngineOutput;
+  currentMonth: Month;
+  monthWidth: number;
+}) {
   const months = engine.months;
-  const width = TIMELINE_LABEL_WIDTH + months.length * TIMELINE_MONTH_WIDTH;
+  const width = timelineTotalWidth(months.length, monthWidth);
   const height = 280;
   const padLeft = TIMELINE_LABEL_WIDTH;
   const padRight = 0;
-  const padTop = 28;
+  const padTop = chartPadTop(months);
   const padBottom = 56;
   const innerHeight = height - padTop - padBottom;
-  const monthCenterX = (index: number) => padLeft + index * TIMELINE_MONTH_WIDTH + TIMELINE_MONTH_WIDTH / 2;
-  const pots = months.map(month => Math.max(0, month.potAfter));
-  const freeBudgets = months.map(month => month.freeBudget);
+  const monthCenterX = (index: number) => padLeft + index * monthWidth + monthWidth / 2;
+  const pots = months.map(month => Math.max(0, month.potAfter, month.potBeforeExpenses));
+  const debtMagnitudes = months.map(month =>
+    Math.max(
+      Math.abs(Math.min(0, month.potAfter)),
+      Math.abs(Math.min(0, month.potBeforeExpenses)),
+    ),
+  );
   const maxPot = Math.max(1, ...pots) * 1.2;
-  const maxFreeBudget = Math.max(1, ...freeBudgets);
-  const minFreeBudget = Math.min(0, ...freeBudgets);
-  // Extra headroom on the free-budget scale pushes the line visually lower vs the pot line.
-  const freeBudgetScaleMax = maxFreeBudget * 1.3;
-  const freeBudgetScaleMin = minFreeBudget;
-  const freeBudgetRange = Math.max(1, freeBudgetScaleMax - freeBudgetScaleMin);
-  const currentIndex = Math.max(0, months.findIndex(month => month.month === currentMonth));
-  const yForPot = (amount: number) => padTop + innerHeight - (Math.max(0, amount) / maxPot) * innerHeight;
-  const yForFreeBudget = (amount: number) => padTop + innerHeight - ((amount - freeBudgetScaleMin) / freeBudgetRange) * innerHeight;
-  const potPoints = months.map((month, index) => {
-    const x = monthCenterX(index);
-    const y = yForPot(month.potAfter);
-    return { x, y };
-  });
-  const freeBudgetPoints = months.map((month, index) => {
-    const x = monthCenterX(index);
-    const y = yForFreeBudget(month.freeBudget);
-    return { x, y };
-  });
+  const maxDebt = Math.max(1, ...debtMagnitudes) * 1.2;
+  const hasSavingsDebt = debtMagnitudes.some(debt => debt > 0.001);
+  const chartBottom = padTop + innerHeight;
+  // With no debt, zero sits at the chart bottom (full-height positive scale).
+  // With debt, split the plot so positive pot is above zero and debt is below.
+  const zeroY = hasSavingsDebt
+    ? padTop + innerHeight * (1 - maxPot / (maxPot + maxDebt))
+    : chartBottom;
+  const currentIndex = months.findIndex(month => month.month === currentMonth);
+  const yForPotPositive = (amount: number) => hasSavingsDebt
+    ? zeroY - (amount / maxPot) * (zeroY - padTop)
+    : chartBottom - (amount / maxPot) * innerHeight;
+  const yForDebt = (amount: number) => zeroY + (Math.abs(amount) / maxDebt) * (chartBottom - zeroY);
+  const potPoints = buildPotLinePoints(months, padLeft, monthWidth, yForPotPositive);
+  const savingsDebtPoints = buildDebtLinePoints(months, padLeft, monthWidth, zeroY, yForDebt);
+  const expenseMarkers = buildPlannedExpenseMarkers(months, padLeft, monthWidth, yForPotPositive, yForDebt);
   const potLinePath = smoothPath(potPoints);
-  const freeBudgetLinePath = smoothPath(freeBudgetPoints);
-  const areaPath = `${potLinePath} L${potPoints[potPoints.length - 1]?.x ?? padLeft},${padTop + innerHeight} L${potPoints[0]?.x ?? padLeft},${padTop + innerHeight} Z`;
+  const savingsDebtLinePath = smoothPath(savingsDebtPoints);
+  const areaPath = `${potLinePath} L${potPoints[potPoints.length - 1]?.x ?? padLeft},${zeroY} L${potPoints[0]?.x ?? padLeft},${zeroY} Z`;
 
   return (
     <div className="v6-chart-shell" style={{ width }}>
@@ -233,7 +444,7 @@ function PotTrajectoryChart({ engine, currentMonth }: { engine: EngineOutput; cu
         height={height}
         viewBox={`0 0 ${width} ${height}`}
         role="img"
-        aria-label="Pot balance and free budget over the planning months"
+        aria-label="Pot balance and savings debt over the planning months"
       >
         <defs>
         <linearGradient id="v6-pot-gradient" x1="0" x2="0" y1="0" y2="1">
@@ -244,7 +455,7 @@ function PotTrajectoryChart({ engine, currentMonth }: { engine: EngineOutput; cu
 
       {[0, 0.25, 0.5, 0.75, 1].map(tick => (
         <line
-          key={tick}
+          key={`grid-${tick}`}
           x1={padLeft}
           x2={width - padRight}
           y1={padTop + innerHeight * tick}
@@ -254,20 +465,70 @@ function PotTrajectoryChart({ engine, currentMonth }: { engine: EngineOutput; cu
         />
       ))}
 
-      {potPoints[currentIndex] && (
+      {hasSavingsDebt && (
+        <>
+          <line
+            x1={padLeft}
+            x2={width - padRight}
+            y1={zeroY}
+            y2={zeroY}
+            stroke="var(--border)"
+            strokeWidth="1.5"
+          />
+          {[0.5, 1].map(tick => (
+            <line
+              key={`debt-grid-${tick}`}
+              x1={padLeft}
+              x2={width - padRight}
+              y1={zeroY + (chartBottom - zeroY) * tick}
+              y2={zeroY + (chartBottom - zeroY) * tick}
+              stroke="var(--border-light)"
+              strokeDasharray="3 5"
+            />
+          ))}
+        </>
+      )}
+
+      {currentIndex >= 0 && (
         <>
           <rect
-            x={padLeft + currentIndex * TIMELINE_MONTH_WIDTH}
+            x={padLeft + currentIndex * monthWidth}
             y={padTop}
-            width={TIMELINE_MONTH_WIDTH}
+            width={monthWidth}
             height={innerHeight}
             fill="var(--color-accent-tint)"
             opacity="0.9"
           />
           {currentIndex > 0 && (
             <line
-              x1={(potPoints[currentIndex - 1].x + potPoints[currentIndex].x) / 2}
-              x2={(potPoints[currentIndex - 1].x + potPoints[currentIndex].x) / 2}
+              x1={(
+                monthChartX(
+                  padLeft,
+                  monthWidth,
+                  currentIndex - 1,
+                  months[currentIndex - 1].potDeduction > 0.001 ? CHART_MONTH_END : 0.5,
+                )
+                + monthChartX(
+                  padLeft,
+                  monthWidth,
+                  currentIndex,
+                  months[currentIndex].potDeduction > 0.001 ? CHART_HIT_PLATEAU : 0.5,
+                )
+              ) / 2}
+              x2={(
+                monthChartX(
+                  padLeft,
+                  monthWidth,
+                  currentIndex - 1,
+                  months[currentIndex - 1].potDeduction > 0.001 ? CHART_MONTH_END : 0.5,
+                )
+                + monthChartX(
+                  padLeft,
+                  monthWidth,
+                  currentIndex,
+                  months[currentIndex].potDeduction > 0.001 ? CHART_HIT_PLATEAU : 0.5,
+                )
+              ) / 2}
               y1={padTop}
               y2={padTop + innerHeight}
               stroke="var(--text-muted)"
@@ -280,49 +541,42 @@ function PotTrajectoryChart({ engine, currentMonth }: { engine: EngineOutput; cu
 
       <path d={areaPath} fill="url(#v6-pot-gradient)" />
       <path d={potLinePath} fill="none" stroke="var(--text)" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
-      <path d={freeBudgetLinePath} fill="none" stroke="var(--color-accent)" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" strokeDasharray="5 5" />
+      {hasSavingsDebt && (
+        <path
+          d={savingsDebtLinePath}
+          fill="none"
+          stroke="var(--color-critical)"
+          strokeWidth="2"
+          strokeLinejoin="round"
+          strokeLinecap="round"
+        />
+      )}
 
-      {months.map((month, monthIndex) => {
-        const point = potPoints[monthIndex];
-        const sortedExpenses = [...month.plannedExpenses].sort(comparePlannedExpensesByTime);
-        if (!point || sortedExpenses.length === 0) return null;
-        const plannedTotal = sortedExpenses.reduce((sum, expense) => sum + expense.amount, 0);
-        const label = sortedExpenses.length === 1 ? sortedExpenses[0].name : `${sortedExpenses.length} planned`;
-
-        return (
-          <g key={`${month.month}-planned-hit`} className="v6-chart-hit">
-            <line x1={point.x} x2={point.x} y1={point.y + 9} y2={padTop + innerHeight} stroke="var(--color-irregular)" strokeDasharray="1 5" opacity="0.28" />
-            <circle cx={point.x} cy={point.y} r="6" fill="var(--color-irregular)" stroke="var(--bg-card)" strokeWidth="2.5" />
-            <g transform={`translate(${point.x} ${point.y - 14})`}>
-              <text x="0" y="-15" textAnchor="middle" className="v6-chart-label">{label}</text>
-              <text x="0" y="-6" textAnchor="middle" className="v6-chart-amount">-{formatCurrency(plannedTotal)}</text>
-            </g>
-          </g>
-        );
-      })}
+      {expenseMarkers.map(marker => (
+        <ChartPlannedExpenseHit
+          key={`${marker.month}-planned-hit`}
+          marker={marker}
+          zeroY={zeroY}
+        />
+      ))}
 
       {months.map((month, index) => {
-        const point = potPoints[index];
         const isCurrent = month.month === currentMonth;
         const isPast = month.month < currentMonth;
         return (
           <g key={month.month}>
-            <text x={point.x} y={height - 30} textAnchor="middle" className={`v6-chart-month ${isCurrent ? 'is-current' : ''} ${isPast ? 'is-past' : ''}`}>
+            <text x={monthCenterX(index)} y={height - 30} textAnchor="middle" className={`v6-chart-month ${isCurrent ? 'is-current' : ''} ${isPast ? 'is-past' : ''}`}>
               {shortMonth(month.month).toUpperCase()}
             </text>
-            <text x={point.x} y={height - 16} textAnchor="middle" className="v6-chart-pot">
-              {formatCurrency(month.potAfter)}
+            <text
+              x={monthCenterX(index)}
+              y={height - 16}
+              textAnchor="middle"
+              className={`v6-chart-pot ${month.potAfter < 0 ? 'v6-chart-pot--debt' : ''}`}
+            >
+              {formatSignedCurrency(month.potAfter)}
             </text>
           </g>
-        );
-      })}
-
-      {[0, 0.5, 1].map(tick => {
-        const value = freeBudgetScaleMin + freeBudgetRange * tick;
-        return (
-          <text key={tick} x={width - 8} y={padTop + innerHeight * (1 - tick) + 3} textAnchor="end" className="v6-chart-free-axis">
-            {formatCurrency(value)}
-          </text>
         );
       })}
       </svg>
@@ -331,15 +585,38 @@ function PotTrajectoryChart({ engine, currentMonth }: { engine: EngineOutput; cu
         style={{ width: TIMELINE_LABEL_WIDTH, height }}
         aria-hidden="true"
       >
-        {[0, 0.5, 1].map(tick => (
-          <span
-            key={tick}
-            className="v6-chart-gutter-label"
-            style={{ top: padTop + innerHeight * (1 - tick) }}
-          >
-            {formatCurrency(maxPot * tick)}
-          </span>
-        ))}
+        {hasSavingsDebt ? (
+          <>
+            {[0, 0.5, 1].map(tick => (
+              <span
+                key={`pos-${tick}`}
+                className="v6-chart-gutter-label"
+                style={{ top: zeroY - tick * (zeroY - padTop) }}
+              >
+                {formatSignedCurrency(maxPot * tick)}
+              </span>
+            ))}
+            {[0.5, 1].map(tick => (
+              <span
+                key={`neg-${tick}`}
+                className="v6-chart-gutter-label v6-chart-gutter-label--negative"
+                style={{ top: zeroY + tick * (chartBottom - zeroY) }}
+              >
+                {formatSignedCurrency(-maxDebt * tick)}
+              </span>
+            ))}
+          </>
+        ) : (
+          [0, 0.5, 1].map(tick => (
+            <span
+              key={tick}
+              className="v6-chart-gutter-label"
+              style={{ top: padTop + innerHeight * (1 - tick) }}
+            >
+              {formatCurrency(maxPot * tick)}
+            </span>
+          ))
+        )}
       </div>
     </div>
   );
@@ -380,6 +657,9 @@ function SetAsideLockCard({
     ? additionalNeeded
     : Math.max(0, recommended - lockedDisplay);
   const lockedPct = recommended > 0 ? Math.min(100, Math.round((lockedDisplay / recommended) * 100)) : 0;
+  const gapBarPct = recommended > 0 ? (additionalNeeded / recommended) * 100 : 0;
+  const surplusBarPct = recommended > 0 ? (surplus / recommended) * 100 : 0;
+  const lockedBarPct = recommended > 0 ? (lockedDisplay / recommended) * 100 : 0;
   const lockTone = statusKind === 'unlocked'
     ? 'empty'
     : lockState === 'confirmed'
@@ -394,21 +674,85 @@ function SetAsideLockCard({
     return 'This month is fully locked in.';
   }
 
+  function getCaptionClassName(): string {
+    if (statusKind === 'additional-needed') {
+      return 'v6-card-caption v6-lock-caption v6-lock-caption--needs-more';
+    }
+    if (statusKind === 'surplus') {
+      return 'v6-card-caption v6-lock-caption v6-lock-caption--surplus';
+    }
+    return 'v6-card-caption';
+  }
+
+  function renderLockProgress(): ReactNode {
+    if (recommended <= 0) {
+      return (
+        <div className="v6-progress" aria-hidden="true">
+          <span style={{ width: '0%' }} />
+        </div>
+      );
+    }
+
+    if (statusKind === 'additional-needed') {
+      return (
+        <div className="v6-progress v6-progress--lock v6-progress--lock-needs-more" aria-hidden="true">
+          <span className="v6-progress__locked" style={{ width: `${lockedBarPct}%` }} />
+          <span className="v6-progress__gap" style={{ width: `${gapBarPct}%` }} />
+        </div>
+      );
+    }
+
+    if (statusKind === 'surplus') {
+      return (
+        <div className="v6-progress v6-progress--lock v6-progress--lock-surplus" aria-hidden="true">
+          <span className="v6-progress__locked" style={{ width: '100%' }} />
+          <span className="v6-progress__surplus" style={{ width: `${surplusBarPct}%` }} />
+        </div>
+      );
+    }
+
+    if (statusKind === 'unlocked') {
+      return (
+        <div className="v6-progress v6-progress--lock v6-progress--lock-needs-more" aria-hidden="true">
+          <span className="v6-progress__locked" style={{ width: '0%' }} />
+          <span className="v6-progress__gap" style={{ width: '100%' }} />
+        </div>
+      );
+    }
+
+    return (
+      <div className="v6-progress" aria-hidden="true">
+        <span style={{ width: `${lockedPct}%` }} />
+      </div>
+    );
+  }
+
+  const showToGoChip = remainingSetAside > 0 && statusKind !== 'surplus';
+  const toGoChipTone = statusKind === 'additional-needed' || statusKind === 'unlocked' ? 'red' : 'amber';
+
   return (
-    <article className={`v6-card v6-hero-card v6-lock-card v6-lock-card--${lockTone}`} data-testid="management-card">
+    <article
+      className={`v6-card v6-hero-card v6-lock-card v6-lock-card--${lockTone}${
+        statusKind === 'additional-needed' ? ' v6-lock-card--needs-more' : ''
+      }${statusKind === 'surplus' ? ' v6-lock-card--surplus' : ''}`}
+      data-testid="management-card"
+    >
       <div className="v6-card-topline">
         <span>Set-aside · {shortMonth(currentMonth)}</span>
-        {remainingSetAside > 0 && <V6Chip tone="amber">{formatCurrency(remainingSetAside)} to go</V6Chip>}
+        {showToGoChip && (
+          <V6Chip tone={toGoChipTone}>{formatCurrency(remainingSetAside)} to go</V6Chip>
+        )}
+        {statusKind === 'surplus' && surplus > 0 && (
+          <V6Chip tone="green">{formatCurrency(surplus)} over</V6Chip>
+        )}
         {statusKind !== 'unlocked' && lockState === 'confirmed' && <V6Chip tone="green">Confirmed</V6Chip>}
       </div>
       <div className="v6-hero-number-row v6-hero-number-row--tight">
         <strong className="v6-hero-number v6-hero-number--small cmm-amount">{formatCurrency(lockedDisplay)}</strong>
         <span className="v6-denominator">/ {Math.round(recommended).toLocaleString('en-GB')}</span>
       </div>
-      <div className="v6-progress" aria-hidden="true">
-        <span style={{ width: `${lockedPct}%` }} />
-      </div>
-      <p className="v6-card-caption">{getCaption()}</p>
+      {renderLockProgress()}
+      <p className={getCaptionClassName()}>{getCaption()}</p>
 
       {!lockForm && !freeUpForm && (
         <div className="v6-lock-actions">
@@ -423,7 +767,7 @@ function SetAsideLockCard({
           )}
           {statusKind === 'additional-needed' && (
             <button
-              className="btn btn-secondary btn-sm"
+              className="btn btn-sm v6-btn-lock-needed"
               onClick={() => setLockForm({ prefill: additionalNeeded, mode: 'additional' })}
             >
               Lock additional
@@ -431,7 +775,7 @@ function SetAsideLockCard({
           )}
           {statusKind === 'surplus' && (
             <button
-              className="btn btn-secondary btn-sm"
+              className="btn btn-sm v6-btn-lock-free"
               onClick={() => setFreeUpForm({ prefill: surplus })}
             >
               Free up
@@ -486,10 +830,11 @@ function HeroCards({
   const spent = getSpentThisMonth(current);
   const freeBudget = current?.freeBudget ?? 0;
   const remainingFree = Math.max(0, freeBudget - spent);
-  const pot = current?.physicalPotAfter ?? 0;
+  const potNow = current?.potActual ?? 0;
+  const potForecastEnd = current?.potAfter ?? 0;
   const spentPct = freeBudget > 0 ? Math.min(100, Math.round((spent / freeBudget) * 100)) : 0;
-  const peak = engine.months.reduce((max, month) => Math.max(max, month.physicalPotAfter), 0);
-  const finalPot = engine.months[engine.months.length - 1]?.physicalPotAfter ?? 0;
+  const peak = engine.months.reduce((max, month) => Math.max(max, month.potAfter), 0);
+  const finalPot = engine.months[engine.months.length - 1]?.potAfter ?? 0;
 
   return (
     <section className="v6-hero-grid" aria-label="Current budget summary">
@@ -517,11 +862,14 @@ function HeroCards({
 
       <article className="v6-card v6-hero-card">
         <div className="v6-card-topline"><span>Pot balance</span></div>
-        <strong className="v6-hero-number v6-hero-number--small">{formatCurrency(pot)}</strong>
-        <p className="v6-trend">Peak forecast {formatCurrency(peak)}</p>
+        <strong className="v6-hero-number v6-hero-number--small">{formatCurrency(Math.max(0, potNow))}</strong>
+        {potNow < 0
+          ? <p className="v6-trend v6-trend--warn">Savings debt: {formatSignedCurrency(potNow)}</p>
+          : <p className="v6-trend">Peak forecast {formatCurrency(peak)}</p>
+        }
         <div className="v6-mini-trace">
-          <div>current · {formatCurrency(pot)}</div>
-          <div>final month · {formatCurrency(finalPot)}</div>
+          <div>end of month · {formatSignedCurrency(potForecastEnd)}</div>
+          <div>final month · {formatCurrency(Math.max(0, finalPot))}</div>
         </div>
       </article>
 
@@ -536,23 +884,36 @@ function HeroCards({
   );
 }
 
-function IncomeOverrideModal({
-  month,
+function AdditionalIncomeModal({
+  initialMonth,
+  visibleMonths,
   budget,
   onClose,
   onSave,
   onClear,
 }: {
-  month: Month;
+  initialMonth: Month;
+  visibleMonths: Month[];
   budget: BudgetState;
   onClose: () => void;
-  onSave: (amount: number) => void;
-  onClear: () => void;
+  onSave: (month: Month, amount: number) => void;
+  onClear: (month: Month) => void;
 }) {
-  const defaultIncome = budget.incomeByMonth?.[month] ?? budget.income;
-  const [amountStr, setAmountStr] = useState(String(defaultIncome));
+  const [month, setMonth] = useState(initialMonth);
+  const [amountStr, setAmountStr] = useState(
+    String(budget.additionalIncomeByMonth?.[initialMonth] ?? ''),
+  );
   const amount = parseFloat(amountStr) || 0;
-  const hasOverride = budget.incomeByMonth?.[month] != null;
+  const hasAdditional = (budget.additionalIncomeByMonth?.[month] ?? 0) > 0;
+  const totalIncome = budget.income + amount;
+
+  useEffect(() => {
+    setAmountStr(
+      budget.additionalIncomeByMonth?.[month] != null
+        ? String(budget.additionalIncomeByMonth[month])
+        : '',
+    );
+  }, [month, budget.additionalIncomeByMonth]);
 
   return (
     <div className="modal-overlay v6-planner-overlay" onClick={onClose}>
@@ -560,37 +921,58 @@ function IncomeOverrideModal({
         <div className="v6-planner-header">
           <div>
             <p className="csv-wizard-kicker">Planning</p>
-            <h2 className="modal-title">Income for {formatMonth(month)}</h2>
+            <h2 className="modal-title">Additional income</h2>
             <p className="v6-card-caption">
-              Override the default {formatCurrency(budget.income)}/mo for this month only.
+              Add extra income on top of your usual {formatCurrency(budget.income)}/mo for one month only.
             </p>
           </div>
           <button type="button" className="modal-close-btn" onClick={onClose} aria-label="Close">
             <X size={18} />
           </button>
         </div>
-        <label className="v6-planner-field">
-          <span>Monthly income</span>
-          <div className="input-prefix">
+        <div className="v6-planner-grid">
+          <label className="v6-planner-field">
+            <span>Month</span>
             <input
               className="input"
-              type="number"
-              min="0"
-              step="0.01"
-              value={amountStr}
-              onChange={event => setAmountStr(event.target.value)}
-              autoFocus
+              type="month"
+              min={visibleMonths[0]}
+              max={visibleMonths[visibleMonths.length - 1]}
+              value={month}
+              onChange={event => setMonth(event.target.value)}
             />
+          </label>
+          <label className="v6-planner-field">
+            <span>Additional amount</span>
+            <div className="input-prefix">
+              <input
+                className="input"
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="0"
+                value={amountStr}
+                onChange={event => setAmountStr(event.target.value)}
+                autoFocus
+              />
+            </div>
+          </label>
+        </div>
+        {amount > 0 && (
+          <div className="v6-planner-analysis">
+            <p className="v6-card-caption">
+              Total income that month: {formatCurrency(budget.income)} + {formatCurrency(amount)} = <strong>{formatCurrency(totalIncome)}</strong>
+            </p>
           </div>
-        </label>
+        )}
         <div className="csv-step-actions">
-          {hasOverride && (
-            <button type="button" className="btn btn-ghost" onClick={onClear}>
-              Use default income
+          {hasAdditional && (
+            <button type="button" className="btn btn-ghost" onClick={() => onClear(month)}>
+              Remove additional income
             </button>
           )}
           <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button type="button" className="btn btn-primary" disabled={amount <= 0} onClick={() => onSave(amount)}>
+          <button type="button" className="btn btn-primary" disabled={amount <= 0} onClick={() => onSave(month, amount)}>
             Save
           </button>
         </div>
@@ -599,28 +981,85 @@ function IncomeOverrideModal({
   );
 }
 
+export type OverflowDecision =
+  | { kind: 'increase'; overflow: number }
+  | { kind: 'freeBudget'; overflow: number };
+
 function EarlyPaymentModal({
   expense,
   paymentMonth,
   budget,
   currentMonth,
+  mode,
+  existingPayment,
   onClose,
   onConfirm,
+  onRemove,
 }: {
   expense: PlannedExpense;
   paymentMonth: Month;
   budget: BudgetState;
   currentMonth: Month;
+  mode: 'add' | 'edit';
+  existingPayment?: PlannedExpensePayment;
   onClose: () => void;
-  onConfirm: (amount: number) => void;
+  onConfirm: (amount: number, overflowDecision?: OverflowDecision) => void;
+  onRemove?: () => void;
 }) {
-  const [amountStr, setAmountStr] = useState('');
+  const [amountStr, setAmountStr] = useState(
+    mode === 'edit' && existingPayment ? String(existingPayment.amount) : '',
+  );
+  const [confirmRemove, setConfirmRemove] = useState(false);
   const amount = parseFloat(amountStr) || 0;
   const engine = amount > 0 ? runEngine(budget, currentMonth) : null;
   const monthResult = engine?.months.find(m => m.month === paymentMonth);
-  const potAvailable = Math.max(0, monthResult?.physicalPotAfter ?? 0);
-  const potPortion = Math.min(amount, potAvailable);
-  const recoveryPortion = Math.max(0, amount - potPortion);
+  const potBalance = monthResult?.potAfter ?? 0;
+  const shortfall = Math.max(0, amount - Math.max(0, potBalance));
+
+  const payments = budget.plannedExpensePayments ?? [];
+  const existingPaid = payments
+    .filter(p => p.plannedExpenseId === expense.id && p.id !== existingPayment?.id)
+    .reduce((sum, p) => sum + p.amount, 0);
+  const remaining = expense.amount - existingPaid;
+  const overflow = amount - remaining;
+  const isOverflow = amount > 0 && overflow > 0;
+
+  const newPlannedTotal = isOverflow ? existingPaid + amount : expense.amount;
+  const draftPayment: PlannedExpensePayment = {
+    id: 'overflow-preview',
+    plannedExpenseId: expense.id,
+    month: paymentMonth,
+    amount,
+    potDeduction: amount,
+  };
+  const paymentsForPreview = [
+    ...payments.filter(p => p.id !== existingPayment?.id),
+    draftPayment,
+  ];
+  const hypotheticalEngine = isOverflow
+    ? runEngine(
+        {
+          ...budget,
+          plannedExpenses: budget.plannedExpenses.map(e =>
+            e.id === expense.id ? { ...e, amount: newPlannedTotal } : e
+          ),
+          plannedExpensePayments: paymentsForPreview,
+        },
+        currentMonth,
+      )
+    : null;
+  const currentRate = engine?.months.find(m => m.month === currentMonth)?.setAsideRecommended ?? 0;
+  const hypotheticalRate = hypotheticalEngine?.months.find(m => m.month === currentMonth)?.setAsideRecommended ?? 0;
+
+  function handleRemoveClick() {
+    if (!onRemove) return;
+    setConfirmRemove(true);
+  }
+
+  function handleConfirmRemove() {
+    onRemove?.();
+    setConfirmRemove(false);
+  }
 
   return (
     <div className="modal-overlay v6-planner-overlay" onClick={onClose}>
@@ -630,45 +1069,222 @@ function EarlyPaymentModal({
             <p className="csv-wizard-kicker">Actualize</p>
             <h2 className="modal-title">Early payment · {expense.name}</h2>
             <p className="v6-card-caption">
-              Record what you paid in {formatMonth(paymentMonth)} toward this {formatCurrency(expense.amount)} expense due in {formatMonth(expense.targetMonth)}.
+              {mode === 'edit'
+                ? `Update what you paid in ${formatMonth(paymentMonth)} toward this ${formatCurrency(expense.amount)} expense due in ${formatMonth(expense.targetMonth)}.`
+                : `Record what you paid in ${formatMonth(paymentMonth)} toward this ${formatCurrency(expense.amount)} expense due in ${formatMonth(expense.targetMonth)}.`}
             </p>
           </div>
           <button type="button" className="modal-close-btn" onClick={onClose} aria-label="Close">
             <X size={18} />
           </button>
         </div>
-        <label className="v6-planner-field">
-          <span>Amount paid</span>
-          <div className="input-prefix">
-            <input
-              className="input"
-              type="number"
-              min="0"
-              step="0.01"
-              value={amountStr}
-              onChange={event => setAmountStr(event.target.value)}
-              autoFocus
-            />
-          </div>
-        </label>
-        {amount > 0 && (
+        <div className="v6-planner-grid">
+          <label className="v6-planner-field">
+            <span>Month</span>
+            <input className="input" type="month" value={paymentMonth} disabled />
+          </label>
+          <label className="v6-planner-field">
+            <span>Amount paid</span>
+            <div className="input-prefix">
+              <input
+                className="input"
+                type="number"
+                min="0"
+                step="0.01"
+                value={amountStr}
+                onChange={event => setAmountStr(event.target.value)}
+                autoFocus
+              />
+            </div>
+          </label>
+        </div>
+        {amount > 0 && !isOverflow && (
           <div className="v6-planner-analysis">
             <p className="v6-card-caption">
-              {potPortion > 0 && <>{formatCurrency(potPortion)} from pot · </>}
-              {recoveryPortion > 0 && (
-                <>{formatCurrency(recoveryPortion)} from free budget — added to recovery (repaid via future set-aside)</>
-              )}
-              {recoveryPortion === 0 && potPortion === amount && <>Fully covered by pot</>}
+              {shortfall <= 0
+                ? <>Fully covered by pot.</>
+                : <>Your pot does not fully cover this yet. The shortfall of {formatCurrency(shortfall)} will be recovered via future set-asides (your rate stays the same).</>
+              }
             </p>
           </div>
         )}
+        {isOverflow && (
+          <div className="v6-planner-analysis v6-overflow-warning">
+            <p className="v6-card-caption v6-overflow-heading">
+              This payment exceeds the planned amount by {formatCurrency(overflow)}.
+            </p>
+            <p className="v6-card-caption v6-overflow-detail">
+              Planned: {formatCurrency(expense.amount)} · Already paid: {formatCurrency(existingPaid)} · Remaining: {formatCurrency(Math.max(0, remaining))}
+            </p>
+            {hypotheticalEngine && (
+              <p className="v6-card-caption v6-overflow-detail">
+                After this payment the trip is fully funded. Set-aside repays savings debt by {formatMonth(expense.targetMonth)}.
+              </p>
+            )}
+          </div>
+        )}
         <div className="csv-step-actions">
-          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button type="button" className="btn btn-primary" disabled={amount <= 0} onClick={() => onConfirm(amount)}>
-            Record payment
-          </button>
+          {mode === 'edit' && onRemove && !confirmRemove && (
+            <button type="button" className="btn btn-ghost v6-btn-danger-text" onClick={handleRemoveClick}>
+              Remove payment
+            </button>
+          )}
+          {mode === 'edit' && onRemove && confirmRemove && (
+            <>
+              <span className="v6-card-caption v6-remove-confirm-text">
+                Remove {formatCurrency(existingPayment?.amount ?? amount)} early payment for {expense.name}?
+              </span>
+              <button type="button" className="btn btn-ghost" onClick={() => setConfirmRemove(false)}>
+                Keep payment
+              </button>
+              <button type="button" className="btn btn-ghost v6-btn-danger-text" onClick={handleConfirmRemove}>
+                Confirm remove
+              </button>
+            </>
+          )}
+          {!confirmRemove && !isOverflow && (
+            <>
+              <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={amount <= 0}
+                onClick={() => onConfirm(amount)}
+              >
+                {mode === 'edit' ? 'Save changes' : 'Record payment'}
+              </button>
+            </>
+          )}
+          {!confirmRemove && isOverflow && (
+            <div className="v6-overflow-actions">
+              <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => onConfirm(amount, { kind: 'freeBudget', overflow })}
+              >
+                Pay {formatCurrency(overflow)} from free budget
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => onConfirm(amount, { kind: 'increase', overflow })}
+              >
+                Increase plan to {formatCurrency(newPlannedTotal)}
+                {hypotheticalRate !== currentRate && (
+                  <span className="v6-overflow-rate-hint">
+                    {' '}(rate {formatCurrency(currentRate)} → {formatCurrency(hypotheticalRate)})
+                  </span>
+                )}
+              </button>
+            </div>
+          )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function LedgerPlannedExpenseName({
+  expense,
+  onRename,
+  onRemove,
+}: {
+  expense: PlannedExpense;
+  onRename: (name: string) => void;
+  onRemove: () => void;
+}) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [draft, setDraft] = useState(expense.name);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const skipBlurCommitRef = useRef(false);
+
+  useEffect(() => {
+    if (!isEditing) {
+      setDraft(expense.name);
+    }
+  }, [expense.name, isEditing]);
+
+  useEffect(() => {
+    if (!isEditing) return;
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, [isEditing]);
+
+  function commit() {
+    skipBlurCommitRef.current = true;
+    const trimmed = draft.trim();
+    if (trimmed && trimmed !== expense.name) {
+      onRename(trimmed);
+    } else {
+      setDraft(expense.name);
+    }
+    setIsEditing(false);
+  }
+
+  function cancel() {
+    skipBlurCommitRef.current = true;
+    setDraft(expense.name);
+    setIsEditing(false);
+  }
+
+  function handleBlur() {
+    if (skipBlurCommitRef.current) {
+      skipBlurCommitRef.current = false;
+      return;
+    }
+    commit();
+  }
+
+  return (
+    <div className="v6-ledger-planned-name">
+      <span className="v6-ledger-dot" aria-hidden />
+      {isEditing ? (
+        <input
+          ref={inputRef}
+          type="text"
+          className="v6-ledger-planned-name-input"
+          value={draft}
+          onChange={event => setDraft(event.target.value)}
+          onBlur={handleBlur}
+          onKeyDown={event => {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              commit();
+            } else if (event.key === 'Escape') {
+              event.preventDefault();
+              cancel();
+            }
+          }}
+          data-testid="ledger-planned-expense-name"
+          aria-label="Planned expense name"
+        />
+      ) : (
+        <button
+          type="button"
+          className="v6-ledger-planned-name-label"
+          onClick={() => setIsEditing(true)}
+          title="Click to rename"
+        >
+          {expense.name}
+        </button>
+      )}
+      {expense.originalAmount != null && (
+        <span className="v6-ledger-planned-overflow">
+          +{formatCurrency(expense.amount - expense.originalAmount)} over plan ({formatCurrency(expense.originalAmount)})
+        </span>
+      )}
+      <button
+        type="button"
+        className="v6-ledger-remove-btn"
+        onClick={event => {
+          event.stopPropagation();
+          onRemove();
+        }}
+        aria-label={`Remove ${expense.name}`}
+      >
+        ×
+      </button>
     </div>
   );
 }
@@ -679,42 +1295,59 @@ function formatLedgerCellAmount(value: number): string {
   return `${prefix}${formatCurrency(Math.abs(value)).replace('€', '')}`;
 }
 
+function formatPotLedgerCellAmount(value: number): string {
+  if (value === 0) return '0';
+  const prefix = value < 0 ? '-' : '';
+  return `${prefix}${formatCurrency(Math.abs(value)).replace('€', '')}`;
+}
+
 function HorizontalLedger({
   engine,
   budget,
   currentMonth,
+  monthWidth,
+  timelineWidth,
   updatePlannedExpense,
   removePlannedExpense,
   onPlanExpenseForMonth,
-  setIncomeForMonth,
-  clearIncomeForMonth,
+  setAdditionalIncomeForMonth,
+  clearAdditionalIncomeForMonth,
   recordEarlyPayment,
+  updateEarlyPayment,
+  removeEarlyPayment,
 }: {
   engine: EngineOutput;
   budget: BudgetState;
   currentMonth: Month;
+  monthWidth: number;
+  timelineWidth: number;
   updatePlannedExpense: (id: string, changes: Partial<Omit<PlannedExpense, 'id'>>) => void;
   removePlannedExpense: (id: string) => void;
   onPlanExpenseForMonth: (month: Month) => void;
-  setIncomeForMonth: (month: Month, amount: number) => void;
-  clearIncomeForMonth: (month: Month) => void;
-  recordEarlyPayment: (plannedExpenseId: string, paymentMonth: Month, amount: number) => void;
+  setAdditionalIncomeForMonth: (month: Month, amount: number) => void;
+  clearAdditionalIncomeForMonth: (month: Month) => void;
+  recordEarlyPayment: (plannedExpenseId: string, paymentMonth: Month, amount: number, overflowToFreeBudget?: number) => void;
+  updateEarlyPayment: (paymentId: string, amount: number, overflowToFreeBudget?: number) => void;
+  removeEarlyPayment: (paymentId: string) => void;
 }) {
   const [editingExpense, setEditingExpense] = useState<{ expense: PlannedExpense; initialFocus: 'name' | 'amount' } | null>(null);
-  const [incomeModalMonth, setIncomeModalMonth] = useState<Month | null>(null);
-  const [earlyPayment, setEarlyPayment] = useState<{ expense: PlannedExpense; paymentMonth: Month } | null>(null);
+  const [incomeModalOpen, setIncomeModalOpen] = useState(false);
+  const [incomeExpanded, setIncomeExpanded] = useState(true);
+  const [setAsideExpanded, setSetAsideExpanded] = useState(false);
+  const [earlyPayment, setEarlyPayment] = useState<{
+    expense: PlannedExpense;
+    paymentMonth: Month;
+    paymentId?: string;
+  } | null>(null);
   const months = engine.months;
   const sortedPlannedExpenses = [...budget.plannedExpenses].sort(comparePlannedExpensesByTime);
-  const gridStyle = timelineGridColumns(months.length);
-  const timelineWidth = TIMELINE_LABEL_WIDTH + months.length * TIMELINE_MONTH_WIDTH;
+  const gridStyle = timelineGridColumns(months.length, monthWidth);
   const payments = budget.plannedExpensePayments ?? [];
-  const recoveries = budget.plannedExpenseRecoveries ?? [];
-  const showSetAsideSplit = months.some(
-    month => month.setAsideRecovery > 0 || month.setAsideFunding > 0,
+  const showSetAsideSplit = months.some(month => month.setAsideRecovery > 0);
+  const showAdditionalIncomeRow = months.some(
+    month => (budget.additionalIncomeByMonth?.[month.month] ?? 0) > 0,
   );
-  const incomeValues = months.map(
-    month => (budget.incomeByMonth?.[month.month] ?? budget.income) + month.incomeCarryover,
-  );
+  const incomeValues = months.map(month => month.monthlyIncome + month.incomeCarryover);
   const rows = [
     {
       group: 'Inflow',
@@ -736,7 +1369,7 @@ function HorizontalLedger({
     },
     {
       group: 'Outflow',
-      label: 'Set-aside to pot',
+      label: 'Set-aside',
       values: months.map(month => -setAsideLedgerAmount(month, currentMonth)),
       tone: 'amber',
     },
@@ -750,10 +1383,12 @@ function HorizontalLedger({
     {
       group: 'Answer',
       label: 'Pot balance end',
-      values: months.map(month => month.potAfter),
+      values: months.map(month => Math.max(0, month.potAfter)),
       tone: 'ink',
     },
   ];
+
+  const showSavingsDebt = months.some(month => month.potAfter < 0);
 
   return (
     <div className="v6-ledger-scroll">
@@ -780,60 +1415,155 @@ function HorizontalLedger({
             <div key={row.label}>
               {showGroup && (
                 <div className="v6-ledger-row v6-ledger-group" style={gridStyle}>
-                  <div>{row.group}</div>
+                  <div className="v6-ledger-group-label">
+                    <span>{row.group}</span>
+                    {row.group === 'Inflow' && (
+                      <button
+                        type="button"
+                        className="v6-ledger-group-add-btn"
+                        onClick={() => setIncomeModalOpen(true)}
+                        aria-label="Add additional income for a month"
+                        title="Add additional income for a month"
+                      >
+                        +
+                      </button>
+                    )}
+                  </div>
                   {months.map(month => <div key={month.month} className={month.month === currentMonth ? 'is-current' : ''} />)}
                 </div>
               )}
               <div className={`v6-ledger-row ${row.highlight ? 'is-highlight' : ''}`} style={gridStyle}>
-                <div className={`v6-ledger-label v6-ledger-tone--${row.tone}`}>{row.label}</div>
+                <div className={`v6-ledger-label v6-ledger-tone--${row.tone}`}>
+                  {row.label === 'Income' && showAdditionalIncomeRow ? (
+                    <button
+                      type="button"
+                      className="v6-ledger-section-toggle"
+                      aria-expanded={incomeExpanded}
+                      aria-controls="ledger-section-income"
+                      data-testid="ledger-section-toggle-income"
+                      onClick={() => setIncomeExpanded(expanded => !expanded)}
+                    >
+                      {incomeExpanded
+                        ? <ChevronDown size={14} aria-hidden />
+                        : <ChevronRight size={14} aria-hidden />}
+                      <span>Income</span>
+                    </button>
+                  ) : row.label === 'Set-aside' && showSetAsideSplit ? (
+                    <button
+                      type="button"
+                      className="v6-ledger-section-toggle"
+                      aria-expanded={setAsideExpanded}
+                      aria-controls="ledger-section-setaside"
+                      onClick={() => setSetAsideExpanded(expanded => !expanded)}
+                    >
+                      {setAsideExpanded
+                        ? <ChevronDown size={14} aria-hidden />
+                        : <ChevronRight size={14} aria-hidden />}
+                      <span>Set-aside</span>
+                    </button>
+                  ) : (
+                    row.label
+                  )}
+                </div>
                 {row.values.map((value, valueIndex) => {
                   const month = months[valueIndex];
-                  const hasIncomeOverride = row.label === 'Income' && budget.incomeByMonth?.[month.month] != null;
                   return (
                     <div
                       key={month.month}
-                      className={`v6-ledger-value v6-ledger-tone--${row.tone} ${month.month === currentMonth ? 'is-current' : ''} ${month.month < currentMonth ? 'is-past' : ''} ${hasIncomeOverride ? 'has-override' : ''}`}
+                      className={`v6-ledger-value v6-ledger-tone--${row.tone} ${month.month === currentMonth ? 'is-current' : ''} ${month.month < currentMonth ? 'is-past' : ''}`}
                     >
-                      {formatLedgerCellAmount(value)}
+                      {row.label === 'Pot balance end'
+                        ? formatPotLedgerCellAmount(value)
+                        : formatLedgerCellAmount(value)}
                     </div>
                   );
                 })}
               </div>
-              {row.label === 'Set-aside to pot' && showSetAsideSplit && (
-                <>
-                  {months.some(month => month.setAsideRecovery > 0) && (
-                    <div className="v6-ledger-row v6-ledger-row--subitem" style={gridStyle}>
-                      <div className="v6-ledger-subitem-label v6-ledger-tone--amber">
-                        <span className="v6-ledger-dot" aria-hidden />
-                        <span>Recovering advance</span>
+              {row.label === 'Income' && showAdditionalIncomeRow && incomeExpanded && (
+                <div id="ledger-section-income">
+                  <div className="v6-ledger-row v6-ledger-row--subitem" style={gridStyle}>
+                    <div className="v6-ledger-subitem-label v6-ledger-tone--ink">
+                      <span className="v6-ledger-dot" aria-hidden />
+                      <span>Base income</span>
+                    </div>
+                    {months.map(month => (
+                      <div
+                        key={month.month}
+                        className={`v6-ledger-value v6-ledger-tone--ink ${month.month === currentMonth ? 'is-current' : ''} ${month.month < currentMonth ? 'is-past' : ''}`}
+                      >
+                        {formatLedgerCellAmount(budget.income + month.incomeCarryover)}
                       </div>
-                      {months.map(month => (
+                    ))}
+                  </div>
+                  <div className="v6-ledger-row v6-ledger-row--subitem" style={gridStyle}>
+                    <div className="v6-ledger-subitem-label v6-ledger-tone--ink">
+                      <span className="v6-ledger-dot" aria-hidden />
+                      <span>Additional income</span>
+                    </div>
+                    {months.map(month => {
+                      const additional = budget.additionalIncomeByMonth?.[month.month] ?? 0;
+                      return (
                         <div
                           key={month.month}
-                          className={`v6-ledger-value v6-ledger-tone--amber ${month.month === currentMonth ? 'is-current' : ''} ${month.month < currentMonth ? 'is-past' : ''}`}
+                          className={`v6-ledger-value v6-ledger-tone--ink ${month.month === currentMonth ? 'is-current' : ''} ${month.month < currentMonth ? 'is-past' : ''} ${additional > 0 ? 'has-override' : ''}`}
                         >
-                          {formatLedgerCellAmount(-month.setAsideRecovery)}
+                          {formatLedgerCellAmount(additional)}
                         </div>
-                      ))}
-                    </div>
-                  )}
-                  {months.some(month => month.setAsideFunding > 0) && (
-                    <div className="v6-ledger-row v6-ledger-row--subitem" style={gridStyle}>
-                      <div className="v6-ledger-subitem-label v6-ledger-tone--amber">
-                        <span className="v6-ledger-dot" aria-hidden />
-                        <span>Toward planned expenses</span>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              {row.label === 'Pot balance end' && showSavingsDebt && (
+                <div className="v6-ledger-row v6-ledger-row--subitem" style={gridStyle}>
+                  <div className="v6-ledger-subitem-label v6-ledger-tone--critical">
+                    <span className="v6-ledger-dot" aria-hidden />
+                    <span>Savings debt</span>
+                  </div>
+                  {months.map(month => {
+                    const signedDebt = Math.min(0, month.potAfter);
+                    return (
+                      <div
+                        key={month.month}
+                        className={`v6-ledger-value v6-ledger-tone--critical ${month.month === currentMonth ? 'is-current' : ''} ${month.month < currentMonth ? 'is-past' : ''}`}
+                      >
+                        {signedDebt < 0 ? formatPotLedgerCellAmount(signedDebt) : '·'}
                       </div>
-                      {months.map(month => (
-                        <div
-                          key={month.month}
-                          className={`v6-ledger-value v6-ledger-tone--amber ${month.month === currentMonth ? 'is-current' : ''} ${month.month < currentMonth ? 'is-past' : ''}`}
-                        >
-                          {formatLedgerCellAmount(-month.setAsideFunding)}
-                        </div>
-                      ))}
+                    );
+                  })}
+                </div>
+              )}
+              {row.label === 'Set-aside' && showSetAsideSplit && setAsideExpanded && (
+                <div id="ledger-section-setaside">
+                  <div className="v6-ledger-row v6-ledger-row--subitem" style={gridStyle}>
+                    <div className="v6-ledger-subitem-label v6-ledger-tone--amber">
+                      <span className="v6-ledger-dot" aria-hidden />
+                      <span>Recovering advance</span>
                     </div>
-                  )}
-                </>
+                    {months.map(month => (
+                      <div
+                        key={month.month}
+                        className={`v6-ledger-value v6-ledger-tone--amber ${month.month === currentMonth ? 'is-current' : ''} ${month.month < currentMonth ? 'is-past' : ''}`}
+                      >
+                        {formatLedgerCellAmount(-month.setAsideRecovery)}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="v6-ledger-row v6-ledger-row--subitem" style={gridStyle}>
+                    <div className="v6-ledger-subitem-label v6-ledger-tone--amber">
+                      <span className="v6-ledger-dot" aria-hidden />
+                      <span>Toward planned expenses</span>
+                    </div>
+                    {months.map(month => (
+                      <div
+                        key={month.month}
+                        className={`v6-ledger-value v6-ledger-tone--amber ${month.month === currentMonth ? 'is-current' : ''} ${month.month < currentMonth ? 'is-past' : ''}`}
+                      >
+                        {formatLedgerCellAmount(-month.setAsideFunding)}
+                      </div>
+                    ))}
+                  </div>
+                </div>
               )}
             </div>
           );
@@ -846,28 +1576,13 @@ function HorizontalLedger({
               {months.map(month => <div key={month.month} className={month.month === currentMonth ? 'is-current' : ''} />)}
             </div>
             {sortedPlannedExpenses.map(expense => {
-              const funding = fundingProgressForExpense(expense, payments, recoveries);
               return (
               <div key={expense.id} className="v6-ledger-row" style={gridStyle}>
-                <div className="v6-ledger-planned-name">
-                  <span className="v6-ledger-dot" />
-                  <span>
-                    {expense.name}
-                    {funding.recoveryOwed > 0 && (
-                      <span className="v6-ledger-planned-meta">
-                        {' '}· {formatCurrency(funding.recoveryOwed)} recovery owed
-                      </span>
-                    )}
-                  </span>
-                  <button
-                    type="button"
-                    className="v6-ledger-remove-btn"
-                    onClick={() => removePlannedExpense(expense.id)}
-                    aria-label={`Remove ${expense.name}`}
-                  >
-                    ×
-                  </button>
-                </div>
+                <LedgerPlannedExpenseName
+                  expense={expense}
+                  onRename={name => updatePlannedExpense(expense.id, { name })}
+                  onRemove={() => removePlannedExpense(expense.id)}
+                />
                 {months.map(month => {
                   const cell = plannedExpenseLedgerCell(expense, month.month, payments);
                   const canRecordEarly =
@@ -880,12 +1595,19 @@ function HorizontalLedger({
                     className={`v6-ledger-value v6-ledger-tone--amber ${month.month === currentMonth ? 'is-current' : ''} ${month.month < currentMonth ? 'is-past' : ''}`}
                   >
                     {cell.kind === 'early-payment' ? (
-                      <span
-                        className="v6-ledger-planned-early"
-                        title={`Early payment for ${expense.name} in ${formatMonth(month.month)}`}
+                      <button
+                        type="button"
+                        className="v6-ledger-planned-cell-btn v6-ledger-planned-early-btn"
+                        onClick={() => setEarlyPayment({
+                          expense,
+                          paymentMonth: month.month,
+                          paymentId: cell.paymentId,
+                        })}
+                        aria-label={`Edit early payment for ${expense.name} in ${formatMonth(month.month)}`}
+                        title={`Edit early payment in ${formatMonth(month.month)}`}
                       >
                         -{formatCurrency(cell.amount).replace('€', '')}
-                      </span>
+                      </button>
                     ) : cell.kind === 'target' ? (
                       <button
                         type="button"
@@ -920,26 +1642,6 @@ function HorizontalLedger({
         )}
       </div>
 
-      <div className="v6-ledger-add-row v6-ledger-add-row--income" style={{ ...gridStyle, width: timelineWidth }}>
-        <div className="v6-ledger-add-label">Income</div>
-        {months.map(month => (
-          <div
-            key={month.month}
-            className={`v6-ledger-add-cell ${month.month === currentMonth ? 'is-current' : ''} ${month.month < currentMonth ? 'is-past' : ''}`}
-          >
-            <button
-              type="button"
-              className="v6-ledger-add-btn"
-              onClick={() => setIncomeModalMonth(month.month)}
-              aria-label={`Set income for ${formatMonth(month.month)}`}
-              title={`Set income for ${formatMonth(month.month)}`}
-            >
-              +
-            </button>
-          </div>
-        ))}
-      </div>
-
       <div className="v6-ledger-add-row" style={{ ...gridStyle, width: timelineWidth }}>
         <div className="v6-ledger-add-label" aria-hidden="true" />
         {months.map(month => {
@@ -964,18 +1666,19 @@ function HorizontalLedger({
         })}
       </div>
 
-      {incomeModalMonth && (
-        <IncomeOverrideModal
-          month={incomeModalMonth}
+      {incomeModalOpen && (
+        <AdditionalIncomeModal
+          initialMonth={currentMonth}
+          visibleMonths={months.map(m => m.month)}
           budget={budget}
-          onClose={() => setIncomeModalMonth(null)}
-          onSave={amount => {
-            setIncomeForMonth(incomeModalMonth, amount);
-            setIncomeModalMonth(null);
+          onClose={() => setIncomeModalOpen(false)}
+          onSave={(month, amount) => {
+            setAdditionalIncomeForMonth(month, amount);
+            setIncomeModalOpen(false);
           }}
-          onClear={() => {
-            clearIncomeForMonth(incomeModalMonth);
-            setIncomeModalMonth(null);
+          onClear={month => {
+            clearAdditionalIncomeForMonth(month);
+            setIncomeModalOpen(false);
           }}
         />
       )}
@@ -986,11 +1689,52 @@ function HorizontalLedger({
           paymentMonth={earlyPayment.paymentMonth}
           budget={budget}
           currentMonth={currentMonth}
+          mode={earlyPayment.paymentId ? 'edit' : 'add'}
+          existingPayment={
+            earlyPayment.paymentId
+              ? payments.find(p => p.id === earlyPayment.paymentId)
+              : undefined
+          }
           onClose={() => setEarlyPayment(null)}
-          onConfirm={amount => {
-            recordEarlyPayment(earlyPayment.expense.id, earlyPayment.paymentMonth, amount);
+          onConfirm={(amount, overflowDecision) => {
+            if (overflowDecision?.kind === 'increase') {
+              const payments = budget.plannedExpensePayments ?? [];
+              const otherPaid = payments
+                .filter(p => p.plannedExpenseId === earlyPayment.expense.id
+                  && p.id !== earlyPayment.paymentId)
+                .reduce((sum, p) => sum + p.amount, 0);
+              updatePlannedExpense(earlyPayment.expense.id, {
+                amount: otherPaid + amount,
+                ...(earlyPayment.expense.originalAmount == null
+                  ? { originalAmount: earlyPayment.expense.amount }
+                  : {}),
+              });
+            }
+
+            const freeBudgetOverflow = overflowDecision?.kind === 'freeBudget'
+              ? overflowDecision.overflow
+              : undefined;
+
+            if (earlyPayment.paymentId) {
+              updateEarlyPayment(earlyPayment.paymentId, amount, freeBudgetOverflow);
+            } else {
+              recordEarlyPayment(
+                earlyPayment.expense.id,
+                earlyPayment.paymentMonth,
+                amount,
+                freeBudgetOverflow,
+              );
+            }
             setEarlyPayment(null);
           }}
+          onRemove={
+            earlyPayment.paymentId
+              ? () => {
+                  removeEarlyPayment(earlyPayment.paymentId!);
+                  setEarlyPayment(null);
+                }
+              : undefined
+          }
         />
       )}
 
@@ -998,6 +1742,8 @@ function HorizontalLedger({
         <EditPlannedExpenseModal
           expense={editingExpense.expense}
           initialFocus={editingExpense.initialFocus}
+          budget={budget}
+          engine={engine}
           currentMonth={currentMonth}
           onClose={() => setEditingExpense(null)}
           onSave={changes => {
@@ -1013,12 +1759,16 @@ function HorizontalLedger({
 function EditPlannedExpenseModal({
   expense,
   initialFocus,
+  budget,
+  engine,
   currentMonth,
   onClose,
   onSave,
 }: {
   expense: PlannedExpense;
   initialFocus: 'name' | 'amount';
+  budget: BudgetState;
+  engine: EngineOutput;
   currentMonth: Month;
   onClose: () => void;
   onSave: (changes: Partial<Omit<PlannedExpense, 'id'>>) => void;
@@ -1027,24 +1777,67 @@ function EditPlannedExpenseModal({
   const [name, setName] = useState(expense.name);
   const [amountStr, setAmountStr] = useState(String(expense.amount));
   const [targetMonth, setTargetMonth] = useState(expense.targetMonth);
+  const [pendingDecision, setPendingDecision] = useState<Omit<PlannedExpense, 'id'> | null>(null);
   const minTargetMonth = expense.targetMonth < currentMonth ? expense.targetMonth : currentMonth;
   const amount = parseFloat(amountStr) || 0;
   const canSave = name.trim().length > 0 && amount > 0 && targetMonth >= minTargetMonth;
-
-  function handleSave() {
-    if (!canSave) return;
-    onSave({
-      name: name.trim(),
-      amount,
-      targetMonth,
-    });
-  }
 
   useEffect(() => {
     if (initialFocus !== 'amount') return;
     amountInputRef.current?.focus();
     amountInputRef.current?.select();
   }, [initialFocus]);
+
+  function buildDraft(): Omit<PlannedExpense, 'id'> {
+    return {
+      name: name.trim(),
+      amount,
+      targetMonth,
+      category: expense.category,
+      confidence: expense.confidence,
+      ...(expense.startFromMonth ? { startFromMonth: expense.startFromMonth } : {}),
+    };
+  }
+
+  function handleSave() {
+    if (!canSave) return;
+    const draft = buildDraft();
+    if (shouldAskPlannedExpenseFundingTiming(budget, engine, draft, currentMonth, {
+      replaceExpenseId: expense.id,
+    })) {
+      setPendingDecision(draft);
+      return;
+    }
+    onSave({
+      name: draft.name,
+      amount: draft.amount,
+      targetMonth: draft.targetMonth,
+    });
+  }
+
+  if (pendingDecision) {
+    return (
+      <PlannedExpenseFundingModal
+        draft={pendingDecision}
+        budget={budget}
+        engine={engine}
+        currentMonth={currentMonth}
+        replaceExpenseId={expense.id}
+        onClose={() => setPendingDecision(null)}
+        onConfirm={confirmed => {
+          onSave({
+            name: confirmed.name,
+            amount: confirmed.amount,
+            targetMonth: confirmed.targetMonth,
+            ...(confirmed.startFromMonth
+              ? { startFromMonth: confirmed.startFromMonth }
+              : { resetStartFromMonth: true }),
+          });
+          setPendingDecision(null);
+        }}
+      />
+    );
+  }
 
   return (
     <div className="modal-overlay v6-planner-overlay" onClick={onClose}>
@@ -1105,7 +1898,6 @@ function PlanExpenseModal({
   const [amountStr, setAmountStr] = useState('');
   const [targetMonth, setTargetMonth] = useState(initialTargetMonth ?? currentMonth);
   const [pendingDecision, setPendingDecision] = useState<Omit<PlannedExpense, 'id'> | null>(null);
-  const [selectedFundingChoice, setSelectedFundingChoice] = useState<'include-current' | 'start-next' | null>(null);
   const amount = parseFloat(amountStr) || 0;
   const canSave = name.trim().length > 0 && amount > 0 && targetMonth >= currentMonth;
   const previewBudget: BudgetState = {
@@ -1136,205 +1928,34 @@ function PlanExpenseModal({
     };
   }
 
-  function shouldAskForFundingDecision(expense: Omit<PlannedExpense, 'id'>): boolean {
-    const currentLockedAmount = getCurrentLockedAmount(budget, currentMonth);
-    if (currentLockedAmount <= 0 || expense.targetMonth <= currentMonth) return false;
-
-    const optionOneBudget: BudgetState = {
-      ...budget,
-      plannedExpenses: [
-        ...budget.plannedExpenses,
-        { id: 'preview', ...expense },
-      ],
-    };
-    const optionOneEngine = runEngine(optionOneBudget, currentMonth);
-    const optionOneCurrent = optionOneEngine.months.find(month => month.month === currentMonth);
-    const additionalNeeded = Math.max(0, (optionOneCurrent?.setAsideRecommended ?? 0) - currentLockedAmount);
-
-    return additionalNeeded > 0;
-  }
-
   function resetAndClose() {
     setPendingDecision(null);
-    setSelectedFundingChoice(null);
     onClose();
   }
 
   function handleConfirm() {
     if (!canSave) return;
     const expense = buildExpense();
-    if (shouldAskForFundingDecision(expense)) {
+    if (shouldAskPlannedExpenseFundingTiming(budget, engine, expense, currentMonth)) {
       setPendingDecision(expense);
-      setSelectedFundingChoice(null);
       return;
     }
     onConfirm(expense);
   }
 
-  function handleConfirmFundingDecision() {
-    if (!pendingDecision || !selectedFundingChoice) return;
-
-    if (selectedFundingChoice === 'start-next') {
-      onConfirm({
-        ...pendingDecision,
-        startFromMonth: addMonths(currentMonth, 1),
-      });
-      return;
-    }
-
-    onConfirm(pendingDecision);
-  }
-
   if (pendingDecision) {
-    const nextMonth = addMonths(currentMonth, 1);
-    const currentLockedAmount = getCurrentLockedAmount(budget, currentMonth);
-    const monthsAvailable = countMonthsInclusive(nextMonth, pendingDecision.targetMonth);
-    const monthWord = monthsAvailable === 1 ? 'month' : 'months';
-
-    const optionOneBudget: BudgetState = {
-      ...budget,
-      plannedExpenses: [
-        ...budget.plannedExpenses,
-        { id: 'preview', ...pendingDecision },
-      ],
-    };
-    const optionOneEngine = runEngine(optionOneBudget, currentMonth);
-    const optionOneCurrent = optionOneEngine.months.find(month => month.month === currentMonth);
-    const optionOneRate = optionOneCurrent?.setAsideRecommended ?? 0;
-    const additionalNeeded = Math.max(0, optionOneRate - currentLockedAmount);
-    const optionOneFutureRate = getFirstFutureRate(optionOneEngine, currentMonth);
-
-    const optionTwoBudget: BudgetState = {
-      ...budget,
-      plannedExpenses: [
-        ...budget.plannedExpenses,
-        {
-          id: 'preview',
-          ...pendingDecision,
-          startFromMonth: nextMonth,
-        },
-      ],
-    };
-    const optionTwoEngine = runEngine(optionTwoBudget, currentMonth);
-    const optionTwoFutureRate = getFirstFutureRate(optionTwoEngine, currentMonth);
-    const baseFutureRate = getFirstFutureRate(engine, currentMonth);
-    const optionOneFutureAdditional = Math.max(0, optionOneFutureRate - baseFutureRate);
-    const optionTwoFutureAdditional = Math.max(0, optionTwoFutureRate - baseFutureRate);
-    const showOptionTwoWarning = optionTwoFutureRate > optionTwoEngine.availablePerMonth * 0.8 || monthsAvailable < 2;
-
     return (
-      <div className="modal-overlay v6-planner-overlay" onClick={resetAndClose}>
-        <div
-          className="modal v6-planner-modal v6-midmonth-modal"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="v6-midmonth-title"
-          data-testid="mid-month-modal"
-          onClick={event => event.stopPropagation()}
-        >
-          <div className="v6-planner-header v6-midmonth-header">
-            <div>
-              <p className="csv-wizard-kicker">Mid-month decision</p>
-              <h2 id="v6-midmonth-title" className="modal-title">How do you want to fund {pendingDecision.name}?</h2>
-              <p className="v6-card-caption">
-                You already locked {formatCurrency(currentLockedAmount)} for {shortMonth(currentMonth)}. Choose whether this new plan should ask for more money now or start from next month.
-              </p>
-            </div>
-            <button type="button" className="modal-close-btn" onClick={resetAndClose} aria-label="Close">
-              <X size={18} />
-            </button>
-          </div>
-
-          <div className="v6-midmonth-summary" aria-label="Expense and lock-in summary">
-            <div>
-              <span>Current locked amount</span>
-              <strong>{formatCurrency(currentLockedAmount)}</strong>
-            </div>
-            <div>
-              <span>Expense</span>
-              <strong>{formatCurrency(pendingDecision.amount)}</strong>
-            </div>
-            <div>
-              <span>Deadline</span>
-              <strong>{formatMonth(pendingDecision.targetMonth)}</strong>
-            </div>
-          </div>
-
-          <div className="v6-midmonth-options" role="radiogroup" aria-label="Funding options">
-            <button
-              type="button"
-              className={`v6-midmonth-option ${selectedFundingChoice === 'include-current' ? 'is-selected' : ''}`}
-              role="radio"
-              aria-checked={selectedFundingChoice === 'include-current'}
-              data-testid="modal-option-1"
-              onClick={() => setSelectedFundingChoice('include-current')}
-            >
-              <span className="v6-midmonth-radio" aria-hidden="true" />
-              <span className="v6-midmonth-option-copy">
-                <span className="v6-midmonth-option-title">Include this month</span>
-                <span className="v6-midmonth-option-desc">
-                  Set aside an additional {formatCurrency(additionalNeeded)} this month.
-                </span>
-                <span className="v6-midmonth-option-detail">
-                  Future impact: {optionOneFutureAdditional > 0
-                    ? `${formatCurrency(optionOneFutureAdditional)} more per month, making the future set-aside ${formatCurrency(optionOneFutureRate)}/month.`
-                    : `Future set-aside stays at ${formatCurrency(optionOneFutureRate)}/month.`}
-                </span>
-              </span>
-            </button>
-
-            <button
-              type="button"
-              className={`v6-midmonth-option ${selectedFundingChoice === 'start-next' ? 'is-selected' : ''}`}
-              role="radio"
-              aria-checked={selectedFundingChoice === 'start-next'}
-              data-testid="modal-option-2"
-              onClick={() => setSelectedFundingChoice('start-next')}
-            >
-              <span className="v6-midmonth-radio" aria-hidden="true" />
-              <span className="v6-midmonth-option-copy">
-                <span className="v6-midmonth-option-title">Start from next month</span>
-                <span className="v6-midmonth-option-desc">
-                  Nothing additional this month.
-                </span>
-                <span className="v6-midmonth-option-detail">
-                  Future impact: {formatCurrency(optionTwoFutureAdditional)} more per month for {monthsAvailable} {monthWord}, making the future set-aside {formatCurrency(optionTwoFutureRate)}/month.
-                </span>
-                {showOptionTwoWarning && (
-                  <span className="v6-midmonth-option-warning">
-                    Starting next month leaves only {monthsAvailable} {monthWord}, so the future monthly amount may be tight.
-                  </span>
-                )}
-              </span>
-            </button>
-          </div>
-
-          <div className="v6-midmonth-impact">
-            <div>
-              <span>Selected impact</span>
-              <strong>
-                {selectedFundingChoice === 'include-current'
-                  ? `${formatCurrency(additionalNeeded)} additional now`
-                  : selectedFundingChoice === 'start-next'
-                    ? `${formatCurrency(optionTwoFutureAdditional)} more/month from ${shortMonth(nextMonth)}`
-                    : 'Choose an option to preview the final effect'}
-              </strong>
-            </div>
-          </div>
-
-          <div className="csv-step-actions">
-            <button type="button" className="btn btn-ghost" onClick={resetAndClose}>Cancel</button>
-            <button
-              type="button"
-              className="btn btn-primary"
-              disabled={!selectedFundingChoice}
-              onClick={handleConfirmFundingDecision}
-            >
-              {selectedFundingChoice ? 'Confirm funding choice' : 'Choose an option'}
-            </button>
-          </div>
-        </div>
-      </div>
+      <PlannedExpenseFundingModal
+        draft={pendingDecision}
+        budget={budget}
+        engine={engine}
+        currentMonth={currentMonth}
+        onClose={resetAndClose}
+        onConfirm={expense => {
+          setPendingDecision(null);
+          onConfirm(expense);
+        }}
+      />
     );
   }
 
@@ -1432,16 +2053,19 @@ export default function V6Dashboard({
   addPlannedExpense,
   updatePlannedExpense,
   removePlannedExpense,
-  setIncomeForMonth,
-  clearIncomeForMonth,
+  setAdditionalIncomeForMonth,
+  clearAdditionalIncomeForMonth,
   recordEarlyPayment,
+  updateEarlyPayment,
+  removeEarlyPayment,
   lockIn,
   freeUp,
 }: Props) {
   const current = getCurrentResult(engine, currentMonth);
   const [plannerOpen, setPlannerOpen] = useState(false);
   const [plannerInitialMonth, setPlannerInitialMonth] = useState<Month>(currentMonth);
-  const timelineWidth = TIMELINE_LABEL_WIDTH + engine.months.length * TIMELINE_MONTH_WIDTH;
+  const monthCount = engine.months.length;
+  const { containerRef: timelineContainerRef, monthWidth, timelineWidth } = useTimelineMonthWidth(monthCount);
   const chartScrollRef = useRef<HTMLDivElement>(null);
   const ledgerScrollRef = useRef<HTMLDivElement>(null);
   const isSyncingTimelineScroll = useRef(false);
@@ -1489,15 +2113,22 @@ export default function V6Dashboard({
       </header>
 
       <main className="v6-main">
-        <HeroCards
-          engine={engine}
-          budget={budget}
-          currentMonth={currentMonth}
-          lockIn={lockIn}
-          freeUp={freeUp}
-        />
+        <div className="v6-dashboard-layout">
+        <div className="v6-dashboard-sidebar">
+          <HeroCards
+            engine={engine}
+            budget={budget}
+            currentMonth={currentMonth}
+            lockIn={lockIn}
+            freeUp={freeUp}
+          />
 
-        <section className="v6-card v6-timeline-card">
+          <section className="v6-under-hood-section" aria-label="Algorithm trace">
+            <AlgoTrace engine={engine} budget={budget} current={current} />
+          </section>
+        </div>
+
+        <section ref={timelineContainerRef} className="v6-card v6-timeline-card">
           <div className="v6-section-header">
             <div>
               <h2>Timeline · next {engine.months.length} months</h2>
@@ -1505,7 +2136,7 @@ export default function V6Dashboard({
             </div>
             <div className="v6-legend">
               <span><i className="v6-legend-line" />Pot</span>
-              <span><i className="v6-legend-line v6-legend-line--free" />Free budget</span>
+              <span><i className="v6-legend-line v6-legend-line--debt" />Savings debt</span>
               <span><i className="v6-legend-dot" />Planned hit</span>
               <button type="button" className="v6-btn v6-btn--ghost" onClick={() => openPlanner()}>
                 + Plan another expense
@@ -1518,7 +2149,7 @@ export default function V6Dashboard({
             onScroll={event => syncTimelineScroll(event.currentTarget)}
           >
             <div className="v6-timeline-canvas" style={{ width: timelineWidth, minWidth: '100%' }}>
-              <PotTrajectoryChart engine={engine} currentMonth={currentMonth} />
+              <PotTrajectoryChart engine={engine} currentMonth={currentMonth} monthWidth={monthWidth} />
             </div>
           </div>
           <div className="v6-ledger-heading">
@@ -1535,20 +2166,21 @@ export default function V6Dashboard({
                 engine={engine}
                 budget={budget}
                 currentMonth={currentMonth}
+                monthWidth={monthWidth}
+                timelineWidth={timelineWidth}
                 updatePlannedExpense={updatePlannedExpense}
                 removePlannedExpense={removePlannedExpense}
                 onPlanExpenseForMonth={openPlanner}
-                setIncomeForMonth={setIncomeForMonth}
-                clearIncomeForMonth={clearIncomeForMonth}
+                setAdditionalIncomeForMonth={setAdditionalIncomeForMonth}
+                clearAdditionalIncomeForMonth={clearAdditionalIncomeForMonth}
                 recordEarlyPayment={recordEarlyPayment}
+                updateEarlyPayment={updateEarlyPayment}
+                removeEarlyPayment={removeEarlyPayment}
               />
             </div>
           </div>
         </section>
-
-        <section className="v6-under-hood-section" aria-label="Algorithm trace">
-          <AlgoTrace engine={engine} budget={budget} current={current} />
-        </section>
+        </div>
       </main>
 
       {plannerOpen && (

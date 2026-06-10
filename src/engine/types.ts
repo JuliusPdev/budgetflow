@@ -36,6 +36,9 @@ export interface PlannedExpense {
   // from the current month's distribution and funds it only from startFromMonth onward.
   // Undefined means "include from the first available month" (the default).
   startFromMonth?: Month;
+  // Set when the user increases the planned amount due to an overflow early payment.
+  // Records the first original value so the ledger can show how far over plan they went.
+  originalAmount?: number;
 }
 
 // Discriminated union: TypeScript knows which fields are available based on `mode`.
@@ -98,6 +101,8 @@ export interface UnplannedExpense {
   month: Month;
   category: string;
   linkedPlannedExpenseId: string | null;
+  /** When this line was created from an early planned-expense payment. */
+  linkedPaymentId?: string;
 }
 
 // A payment record is created when money is spent toward a planned expense before
@@ -153,9 +158,11 @@ export interface MonthCarryAdjustments {
 // ─── Persisted state (written to and read from localStorage) ──────────────────
 
 export interface BudgetState {
-  /** Default monthly income when a month has no entry in incomeByMonth. */
+  /** Default monthly income for most months. */
   income: number;
-  /** Actual confirmed income per calendar month (from CSV settlement). */
+  /** Extra income added on top of `income` for specific months (bonus, freelance, etc.). */
+  additionalIncomeByMonth?: Partial<Record<Month, number>>;
+  /** Legacy full-month income override (CSV settlement). Prefer additionalIncomeByMonth in the planner. */
   incomeByMonth?: Partial<Record<Month, number>>;
   fixedExpenses: FixedExpense[];
   plannedExpenses: PlannedExpense[];
@@ -189,7 +196,7 @@ export type LockStatus =
 
 export interface MonthResult {
   month: Month;
-  /** Income used for this month (from incomeByMonth or default income). */
+  /** Income used for this month (default income + any additional income for this month). */
   monthlyIncome: number;
   /** monthlyIncome − fixed − Mode B savings (before set-aside). */
   availableAfterFixed: number;
@@ -199,15 +206,19 @@ export interface MonthResult {
   unplannedTotal: number;                 // sum of those expenses
   incomeCarryover: number;                // free budget carried into this month
   setAsideRecommended: number;            // what the algorithm says to set aside
-  /** Portion of setAsideRecommended repaying early free-budget payments. */
+  /** Portion of setAsideRecommended repaying savings loan (pot was negative). */
   setAsideRecovery: number;
-  /** Portion of setAsideRecommended funding planned expenses (goes to pot). */
+  /** Portion of setAsideRecommended funding planned expenses (builds pot). */
   setAsideFunding: number;
-  plannedExpenseRecoverySlices: Array<{ plannedExpenseId: string; expenseName: string; amount: number }>;
   setAsideLocked: number;                 // what has actually been transferred (0 for future months)
   freeBudget: number;                     // A − set-aside − unplanned expenses
-  potAfter: number;                       // cumulative pot balance after this month
-  physicalPotAfter: number;               // actual locked pot balance, before unfounded planned deductions
+  /** Pot after set-aside, before planned pot deductions this month (chart: level at expense hit). */
+  potBeforeExpenses: number;
+  /** Planned pot deduction this month (may be less than plannedTotal after early payments). */
+  potDeduction: number;
+  potAfter: number;                       // pot forecast after this month (can be negative = savings loan)
+  /** Physical pot right now: locks + envelope-to-pot − factual deductions (current month only). */
+  potActual: number;
   lockStatus: LockStatus;                 // only meaningful for the current month
 }
 

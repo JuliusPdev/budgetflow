@@ -18,6 +18,13 @@ export function formatCurrency(amount: number): string {
   return `€${rounded.toLocaleString('en-GB')}`;
 }
 
+// Signed amounts with explicit minus before €: -800 → "-€800"
+export function formatSignedCurrency(amount: number): string {
+  if (amount === 0) return '€0';
+  const sign = amount < 0 ? '-' : '';
+  return `${sign}€${Math.abs(Math.round(amount)).toLocaleString('en-GB')}`;
+}
+
 // Two-decimal amounts for precise algorithm outputs: 133.33 → "€133.33"
 export function formatCurrencyExact(amount: number): string {
   return `€${amount.toFixed(2)}`;

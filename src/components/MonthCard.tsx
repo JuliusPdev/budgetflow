@@ -633,7 +633,7 @@ export default function MonthCard({
       {/* ── Pot balance ───────────────────────────────────────────────────── */}
       <div className="mc-pot-balance">
         <span className="mc-pot-label" title="Savings pot — accumulates over time and funds your planned expenses">Pot</span>
-        <span className="mc-pot-amount num">{formatCurrency(result.physicalPotAfter)}</span>
+        <span className="mc-pot-amount num">{formatCurrency(result.potAfter)}</span>
       </div>
 
       {/* ── Mid-month funding choice modal ──────────────────────────────── */}
