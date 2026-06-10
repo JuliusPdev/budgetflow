@@ -126,6 +126,61 @@ If your implementation doesn't produce these exact results, the algorithm is wro
 
 ---
 
+## Early payment recovery vs outstanding funding
+
+When the user pays a planned expense early from the savings pot, two separate jobs share one pot:
+
+| Layer | Purpose | Horizon |
+|-------|---------|---------|
+| **Funding** | Cover **remaining** planned expenses by **their** deadlines | Each open expense's target month |
+| **Recovery** | Refill savings after a **fully paid** early payment | Original target month of that expense |
+
+### Physical dip vs algorithm carry
+
+- **`potActual`** (physical pot now) = past locks + envelope surplus − factual pot deductions, **including** the current month's lock and deductions.
+- **`potCarry`** (algorithm carry) = past locks + past envelope − past and current-month deductions. It **excludes** the current month's lock because the algorithm treats the current month like any other saving month.
+
+The funding pass uses **`max(0, potCarry)`** as carry — positive savings from past months reduce how much still needs to be saved, but a negative dip from early payments does **not** accelerate funding. Recovery handles the dip separately.
+
+### Recovery scheduling
+
+For each early payment where the expense is **fully paid** (`remainingAmount === 0`):
+
+1. Compute the **physical dip**: `max(0, −potActualNow)`.
+2. Assign each payment's `potDeduction` to a recovery window from the payment month through the expense's **original target month** (inclusive).
+3. If assigned recovery exceeds the physical dip, scale down proportionally.
+4. Spread each payment's recovery debt uniformly within its window.
+
+Partial early payments stay on the **funding** timeline for their remaining balance. Recovery applies only after full payment.
+
+### Combining and feasibility
+
+Each month:
+
+```
+totalRate = fundingRate + recoveryRate
+```
+
+Simulate the pot from **`potActualNow`**: add `totalRate` each month, subtract remaining expense hits. If any expense month would leave the pot negative, raise rates using the existing binding-constraint logic (`smooth()` on the combined expense schedule with `potActualNow` as carry). Deadlines always win.
+
+Display fields:
+
+- **`setAsideRecommended`** = combined total (minus envelope pot on current month)
+- **`setAsideFunding`** = funding portion
+- **`setAsideRecovery`** = recovery portion
+
+### Example: Splitwise paid early, Soundboks due August
+
+June: €300 locked, €400 Splitwise paid in full (target October), €800 Soundboks still due August. Physical dip = €300 lock − €400 payment = **−€100**.
+
+- **Funding** (Soundboks only, dip ignored): ~€267/mo toward August
+- **Recovery** (€100 dip, June → October): ~€20/mo
+- **Combined** ~€287/mo fails the August deadline → floor raises to **~€300/mo** (not €400)
+
+Moving Splitwise's target from October to December lowers the recovery slice (~€14/mo vs ~€20/mo) but does **not** change the August floor when Soundboks is the binding constraint.
+
+---
+
 ## Edge Cases
 
 - **Expense in current month**: No smoothing. Full amount deducted from free budget directly.

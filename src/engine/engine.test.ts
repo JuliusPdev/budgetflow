@@ -583,10 +583,10 @@ describe('Early payment fully from pot reduces remaining and allows negative pot
   });
 });
 
-describe('Early payment makes pot negative, recovery split is display-only', () => {
+describe('Early payment makes pot negative, partial payment still on funding timeline', () => {
   // Trip €800 in May. In Feb, user pays €400 early (fully from pot, pot = 0 - 400 = -400).
   // From March: potCarry = -400, remaining trip = 400, expense in May.
-  // smooth() sees -400 carry + 400 expense over 3 months = 800 / 3 ≈ 266.67.
+  // Partial payment — recovery waits until fully paid; feasibility floor keeps ~266.67/mo.
   const state: BudgetState = {
     income: 3000,
     fixedExpenses: [],
@@ -621,10 +621,10 @@ describe('Early payment makes pot negative, recovery split is display-only', () 
 
   const result = runEngine(state, '2026-03');
 
-  it('shows recovery portion when pot is negative (display-only split)', () => {
+  it('shows no recovery slice while the expense still has a remaining balance', () => {
     const march = find(result.months, '2026-03');
-    expect(r(march.setAsideRecovery)).toBeGreaterThan(0);
-    expect(r(march.setAsideRecovery + march.setAsideFunding)).toBe(r(march.setAsideRecommended));
+    expect(r(march.setAsideRecovery)).toBe(0);
+    expect(r(march.setAsideFunding)).toBe(r(march.setAsideRecommended));
   });
 
   it('produces a uniform rate — smooth() allows negative pot during recovery', () => {
@@ -750,9 +750,10 @@ describe('Early payment makes pot go negative, rate covers remaining + recovery'
     expect(Math.abs(r(find(result.months, '2026-08').potAfter))).toBe(0);
   });
 
-  it('shows recovery split when pot is negative', () => {
+  it('shows recovery only after the expense is fully paid', () => {
     const may = find(result.months, '2026-05');
-    expect(r(may.setAsideRecovery)).toBeGreaterThan(0);
+    expect(r(may.setAsideRecovery)).toBe(0);
+    expect(r(may.setAsideFunding)).toBe(r(may.setAsideRecommended));
   });
 });
 
@@ -1019,6 +1020,132 @@ describe('Deferred expense: start-from-next-month gets its own rate pass', () =>
   it('rates drop to zero after all expenses are covered', () => {
     const nov = find(result.months, '2026-11');
     expect(r(nov.setAsideRecommended)).toBe(0);
+  });
+});
+
+// ─── Split funding vs slow recovery ────────────────────────────────────────────
+
+function splitwiseAugustState(splitwiseTarget: string): BudgetState {
+  return {
+    income: 3400,
+    fixedExpenses: [],
+    plannedExpenses: [
+      {
+        id: 'splitwise',
+        name: 'Splitwise',
+        amount: 400,
+        targetMonth: splitwiseTarget,
+        category: 'general',
+        confidence: 'confirmed',
+      },
+      {
+        id: 'soundboks',
+        name: 'Soundboks',
+        amount: 800,
+        targetMonth: '2026-08',
+        category: 'general',
+        confidence: 'confirmed',
+      },
+    ],
+    savingsGoals: [],
+    lockIns: [
+      { id: 'jun-lock', month: '2026-06', lockedAmount: 300, lockState: 'planned' },
+    ],
+    unplannedExpenses: [],
+    envelopeActualizations: [],
+    plannedExpensePayments: [
+      {
+        id: 'pay-splitwise',
+        plannedExpenseId: 'splitwise',
+        month: '2026-06',
+        amount: 400,
+        potDeduction: 400,
+      },
+    ],
+    plannedExpenseRecoveries: [],
+    plannedExpenseSettlements: [],
+    reconciledMonths: [],
+    monthCarryAdjustments: [],
+  };
+}
+
+describe('Split recovery — Splitwise paid early, Soundboks due August', () => {
+  // Jun: €300 locked, €400 Splitwise paid (fully), €800 Soundboks still open.
+  // Physical dip = −€100. Combined slow recovery + August funding floors at ~€300/mo, not €400.
+  const result = runEngine(splitwiseAugustState('2026-10'), '2026-06');
+
+  it('recommends ~€300/mo through August, not the old €400 recovery-at-August-speed', () => {
+    for (const month of ['2026-06', '2026-07', '2026-08']) {
+      const m = find(result.months, month);
+      expect(r(m.setAsideRecommended)).toBe(300);
+    }
+  });
+
+  it('includes a recovery slice for the fully-paid Splitwise dip', () => {
+    const jun = find(result.months, '2026-06');
+    expect(r(jun.setAsideRecovery)).toBeGreaterThan(0);
+    expect(r(jun.setAsideFunding)).toBeGreaterThan(0);
+    expect(r(jun.setAsideRecovery + jun.setAsideFunding)).toBe(r(jun.setAsideRecommended));
+  });
+});
+
+describe('Split recovery — target month changes recovery slice, not August floor', () => {
+  const octTarget = runEngine(splitwiseAugustState('2026-10'), '2026-06');
+  const decTarget = runEngine(splitwiseAugustState('2026-12'), '2026-06');
+
+  it('August binding floor stays ~€300 for both target months', () => {
+    for (const month of ['2026-06', '2026-07', '2026-08']) {
+      expect(r(find(octTarget.months, month).setAsideRecommended)).toBe(300);
+      expect(r(find(decTarget.months, month).setAsideRecommended)).toBe(300);
+    }
+  });
+});
+
+describe('Split recovery — only expense fully paid early', () => {
+  const state: BudgetState = {
+    income: 3000,
+    fixedExpenses: [],
+    plannedExpenses: [
+      {
+        id: 'trip',
+        name: 'Trip',
+        amount: 800,
+        targetMonth: '2026-05',
+        category: 'travel',
+        confidence: 'confirmed',
+      },
+    ],
+    savingsGoals: [],
+    lockIns: [],
+    unplannedExpenses: [],
+    envelopeActualizations: [],
+    plannedExpensePayments: [
+      {
+        id: 'full-pay',
+        plannedExpenseId: 'trip',
+        month: '2026-02',
+        amount: 800,
+        potDeduction: 800,
+      },
+    ],
+    plannedExpenseRecoveries: [],
+    plannedExpenseSettlements: [],
+    reconciledMonths: [],
+    monthCarryAdjustments: [],
+  };
+
+  const result = runEngine(state, '2026-03');
+
+  it('recovery only through the original target month', () => {
+    const mar = find(result.months, '2026-03');
+    const apr = find(result.months, '2026-04');
+    const may = find(result.months, '2026-05');
+    const jun = find(result.months, '2026-06');
+    expect(r(mar.setAsideFunding)).toBe(0);
+    expect(r(mar.setAsideRecovery)).toBeGreaterThan(0);
+    expect(r(may.setAsideRecovery)).toBeGreaterThan(0);
+    expect(r(jun.setAsideRecommended)).toBe(0);
+    expect(r(apr.setAsideRecommended)).toBe(r(mar.setAsideRecommended));
   });
 });
 

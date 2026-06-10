@@ -1,4 +1,5 @@
 import { availableForMonth, incomeForMonth } from './income';
+import { computeSplitSetAsideRates } from './splitRecovery';
 import type {
   BudgetState,
   EngineOutput,
@@ -31,7 +32,7 @@ export function addMonths(month: Month, n: number): Month {
 // Returns the optimal set-aside amount for each month in `months`.
 // This is a recursive function: when equal distribution fails, it splits at
 // the binding constraint and solves each segment independently.
-function smooth(
+export function smooth(
   months: Month[],
   expenseTotals: Map<Month, number>,
   potCarry: number
@@ -399,57 +400,38 @@ export function runEngine(state: BudgetState, currentMonth: Month): EngineOutput
     cursor = addMonths(cursor, 1);
   }
 
-  // Debt-only recovery: trip already fully funded but pot is negative. Spread repayment
-  // over the planning horizon (not the 12-month display fallback). Credit money already
-  // locked or envelope-surplus directed to pot this month toward that repayment.
-  const debtRecoveryOnly = lastExpenseMonth == null && potCarry < -EPSILON;
-  const currentLockedForSmooth = lockIns.find(l => l.month === currentMonth)?.lockedAmount ?? 0;
-  const currentEnvelopeForSmooth = envelopePotByMonth.get(currentMonth) ?? 0;
-  const smoothCarry = debtRecoveryOnly
-    ? potCarry + currentLockedForSmooth + currentEnvelopeForSmooth
-    : potCarry;
-
-  // Run the algorithm to get the recommended rate for all months including current.
-  // Deferred expenses are excluded here — they don't affect this month's target.
-  const rates = smooth(algorithmMonths, regularAlgorithmExpenses, smoothCarry);
-
-  // What has the user actually contributed to the pot in the current month so far?
-  // This is the voluntary lock-in plus any envelope surplus directed to pot.
   const currentLocked       = lockIns.find(l => l.month === currentMonth)?.lockedAmount ?? 0;
   const currentEnvelopePot  = envelopePotByMonth.get(currentMonth) ?? 0;
   const currentActualContribution = currentLocked + currentEnvelopePot;
   const potActualNow = potCarry + currentActualContribution;
 
+  // Split funding (remaining expenses, past carry only) from recovery (savings dip repaid
+  // over each fully-paid expense's original target month). Feasibility floor uses potActualNow.
+  const splitRates = computeSplitSetAsideRates(
+    algorithmMonths,
+    currentMonth,
+    regularAlgorithmExpenses,
+    deferredAlgorithmExpenses,
+    expenseTotals,
+    potActualNow,
+    potCarry,
+    plannedExpenses,
+    paymentsByExpense,
+    settlementMap,
+    currentActualContribution,
+    smooth,
+  );
+
   const rateMap = new Map<Month, number>();
-  algorithmMonths.forEach((m, i) => {
-    const raw = rates[i] < EPSILON ? 0 : rates[i];
-    const envelopePot = m === currentMonth ? currentEnvelopePot : 0;
-    rateMap.set(m, Math.max(0, raw - envelopePot));
+  const fundingMap = new Map<Month, number>();
+  const recoveryMap = new Map<Month, number>();
+  algorithmMonths.forEach((month, index) => {
+    const envelopePot = month === currentMonth ? currentEnvelopePot : 0;
+    const total = Math.max(0, splitRates.total[index] - envelopePot);
+    rateMap.set(month, total);
+    fundingMap.set(month, splitRates.funding[index]);
+    recoveryMap.set(month, splitRates.recovery[index]);
   });
-
-  // Second pass: deferred expenses ("start from next month") were excluded from pass 1
-  // so they don't change the current month's rate. Now merge them in for future months.
-  if (deferredAlgorithmExpenses.size > 0) {
-    const currentRate = rates[0];
-    const effectiveCurrentContribution = Math.max(currentActualContribution, currentRate);
-    const currentExpenseTotal = expenseTotals.get(currentMonth) ?? 0;
-    const potAfterCurrent = potCarry + effectiveCurrentContribution - currentExpenseTotal;
-
-    const futureMonths = algorithmMonths.slice(1);
-    const mergedExpenses = new Map<Month, number>();
-    for (const [m, amt] of regularAlgorithmExpenses) {
-      if (m > currentMonth) mergedExpenses.set(m, amt);
-    }
-    for (const [m, amt] of deferredAlgorithmExpenses) {
-      mergedExpenses.set(m, (mergedExpenses.get(m) ?? 0) + amt);
-    }
-
-    const pass2Rates = smooth(futureMonths, mergedExpenses, potAfterCurrent);
-    futureMonths.forEach((m, i) => {
-      const raw = pass2Rates[i] < EPSILON ? 0 : pass2Rates[i];
-      rateMap.set(m, Math.max(0, raw));
-    });
-  }
 
   // Display window: always at least 11 future months so the grid is never sparse.
   // Months beyond the last expense get rate = 0 (nothing left to save for).
@@ -478,13 +460,8 @@ export function runEngine(state: BudgetState, currentMonth: Month): EngineOutput
     const unplannedTotal  = monthUnplanned.reduce((s, e) => s + e.amount, 0);
     const incomeCarryover = carryBoostByMonth.get(month) ?? 0;
 
-    // Display-only recovery/funding split based on pot sign before contribution.
-    // If pot is negative, some of the set-aside is "recovering" the savings loan.
-    const potBeforeContribution = pot;
-    const setAsideRecovery = potBeforeContribution < -EPSILON
-      ? Math.min(rate, -potBeforeContribution)
-      : 0;
-    const setAsideFunding = rate - setAsideRecovery;
+    const setAsideRecovery = recoveryMap.get(month) ?? 0;
+    const setAsideFunding = fundingMap.get(month) ?? 0;
 
     // Full rate enters the pot; expenses leave it. Pot can go negative (savings loan).
     pot += rate;
