@@ -8,7 +8,7 @@ import {
   layoutExpenseLabels,
   maxPlannedExpenseStackDepth,
 } from './potChartMarkers';
-import type { MonthResult, PlannedExpense } from '../engine/types';
+import type { MonthResult, PlannedExpense, PlannedExpensePayment } from '../engine/types';
 
 function expense(id: string, name: string, amount: number, targetMonth: string): PlannedExpense {
   return {
@@ -68,6 +68,7 @@ describe('buildPlannedExpenseMarkers', () => {
   const monthWidth = 92;
   const yForPotPositive = (amount: number) => 100 - amount / 20;
   const yForDebt = () => 150;
+  const noPayments: PlannedExpensePayment[] = [];
 
   it('emits one marker per month with all expenses and the total', () => {
     const months = [
@@ -80,7 +81,14 @@ describe('buildPlannedExpenseMarkers', () => {
       ),
     ];
 
-    const markers = buildPlannedExpenseMarkers(months, padLeft, monthWidth, yForPotPositive, yForDebt);
+    const markers = buildPlannedExpenseMarkers(
+      months,
+      noPayments,
+      padLeft,
+      monthWidth,
+      yForPotPositive,
+      yForDebt,
+    );
     expect(markers).toHaveLength(1);
 
     const august = markers[0];
@@ -93,7 +101,55 @@ describe('buildPlannedExpenseMarkers', () => {
 
   it('skips months without a pot deduction', () => {
     const months = [hitMonth('2026-08', [expense('a', 'Only', 100, '2026-08')], 500, 0)];
-    expect(buildPlannedExpenseMarkers(months, padLeft, monthWidth, yForPotPositive, yForDebt)).toHaveLength(0);
+    expect(buildPlannedExpenseMarkers(
+      months,
+      noPayments,
+      padLeft,
+      monthWidth,
+      yForPotPositive,
+      yForDebt,
+    )).toHaveLength(0);
+  });
+
+  it('uses remaining amounts and marks fully-paid expenses at the hit month', () => {
+    const soundboks = expense('soundboks', 'Soundboks', 375, '2026-10');
+    const splitwise = expense('splitwise', 'Splitwise', 400, '2026-10');
+    const oktoberfest = expense('oktoberfest', 'Oktoberfest', 400, '2026-10');
+    const months = [
+      hitMonth('2026-10', [soundboks, splitwise, oktoberfest], 2000, 800),
+    ];
+    const payments: PlannedExpensePayment[] = [
+      {
+        id: 'pay-jun',
+        plannedExpenseId: 'soundboks',
+        month: '2026-06',
+        amount: 375,
+        potDeduction: 375,
+      },
+    ];
+
+    const markers = buildPlannedExpenseMarkers(
+      months,
+      payments,
+      padLeft,
+      monthWidth,
+      yForPotPositive,
+      yForDebt,
+    );
+    expect(markers).toHaveLength(1);
+
+    const october = markers[0];
+    expect(october.totalAmount).toBe(800);
+    expect(october.expenses).toHaveLength(3);
+
+    const soundboksLine = october.expenses.find(line => line.name === 'Soundboks');
+    expect(soundboksLine).toEqual({
+      name: 'Soundboks',
+      amount: 375,
+      paidAtTarget: true,
+    });
+    expect(october.expenses.filter(line => !line.paidAtTarget).reduce((sum, line) => sum + line.amount, 0))
+      .toBe(800);
   });
 });
 

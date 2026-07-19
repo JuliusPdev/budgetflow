@@ -2759,6 +2759,22 @@ a { color: inherit; }
   font-weight: 600;
 }
 
+.v6-chart-expense--paid {
+  fill: var(--text-muted);
+  opacity: 0.45;
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+.v6-ledger-planned-paid {
+  display: inline-block;
+  color: var(--text-muted);
+  font-weight: 700;
+  opacity: 0.55;
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
 .v6-chart-gutter {
   position: sticky;
   left: 0;

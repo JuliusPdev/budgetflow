@@ -1,4 +1,5 @@
-import type { Month, MonthResult, PlannedExpense } from '../engine/types';
+import type { Month, MonthResult, PlannedExpense, PlannedExpensePayment } from '../engine/types';
+import { remainingPlannedExpenseAmount } from '../utils/ledgerDisplay';
 
 /** Within a month column: plateau before expense, marker at hit, end-of-month balance. */
 export const CHART_HIT_MARKER = 0.55;
@@ -43,6 +44,8 @@ export function chartLabelStackHeight(expenseCount: number): number {
 export interface PlannedExpenseChartLine {
   name: string;
   amount: number;
+  /** Fully funded before the target month — shown struck-through, excluded from total. */
+  paidAtTarget: boolean;
 }
 
 export interface PlannedExpenseChartMarker {
@@ -83,6 +86,7 @@ function chartX(padLeft: number, monthWidth: number, monthIndex: number, fractio
 
 export function buildPlannedExpenseMarkers(
   months: MonthResult[],
+  payments: PlannedExpensePayment[],
   padLeft: number,
   monthWidth: number,
   yForPotPositive: (amount: number) => number,
@@ -95,8 +99,18 @@ export function buildPlannedExpenseMarkers(
     if (month.plannedExpenses.length === 0 || month.potDeduction <= 0.001) continue;
 
     const sortedExpenses = [...month.plannedExpenses].sort(comparePlannedExpensesByTime);
-    const plannedTotal = sortedExpenses.reduce((sum, expense) => sum + expense.amount, 0);
-    const totalAmount = month.potDeduction > 0 ? month.potDeduction : plannedTotal;
+    const expenseLines = sortedExpenses.map(expense => {
+      const remaining = remainingPlannedExpenseAmount(expense, payments);
+      const paidAtTarget = remaining <= 0.001;
+      return {
+        name: expense.name,
+        amount: paidAtTarget ? expense.amount : remaining,
+        paidAtTarget,
+      };
+    });
+    const totalAmount = expenseLines
+      .filter(line => !line.paidAtTarget)
+      .reduce((sum, line) => sum + line.amount, 0);
 
     const beforeSigned = Math.min(0, month.potBeforeExpenses);
     const y = beforeSigned < 0
@@ -107,10 +121,7 @@ export function buildPlannedExpenseMarkers(
       month: month.month,
       x: chartX(padLeft, monthWidth, monthIndex, CHART_HIT_MARKER),
       y,
-      expenses: sortedExpenses.map(expense => ({
-        name: expense.name,
-        amount: expense.amount,
-      })),
+      expenses: expenseLines,
       totalAmount,
     });
   }
