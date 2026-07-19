@@ -1110,7 +1110,7 @@ describe('Split recovery — month advance keeps recovery visible and stable', (
         { id: 'fixed', name: 'Fixed', amount: 1885, category: 'general', isEnvelope: false, actualAmount: null },
       ],
       savingsGoals: [
-        { id: 'sg', name: 'Savings', mode: 'monthly', monthlyAmount: 325, targetAmount: 0, targetDate: '2026-12', currentAmount: 0 },
+        { id: 'sg', name: 'Savings', mode: 'monthly', monthlyAmount: 325 },
       ],
       unplannedExpenses: [],
       envelopeActualizations: [],
@@ -1171,7 +1171,7 @@ describe('Split recovery — month advance keeps recovery visible and stable', (
         { id: 'fixed', name: 'Fixed', amount: 1885, category: 'general', isEnvelope: false, actualAmount: null },
       ],
       savingsGoals: [
-        { id: 'sg', name: 'Savings', mode: 'monthly', monthlyAmount: 325, targetAmount: 0, targetDate: '2026-12', currentAmount: 0 },
+        { id: 'sg', name: 'Savings', mode: 'monthly', monthlyAmount: 325 },
       ],
       unplannedExpenses: [],
       envelopeActualizations: [],
@@ -1263,7 +1263,7 @@ function soundboksJuneScenarioState(): BudgetState {
       { id: 'fixed', name: 'Fixed', amount: 1885, category: 'general', isEnvelope: false, actualAmount: null },
     ],
     savingsGoals: [
-      { id: 'sg', name: 'Savings', mode: 'monthly', monthlyAmount: 325, targetAmount: 0, targetDate: '2026-12', currentAmount: 0 },
+      { id: 'sg', name: 'Savings', mode: 'monthly', monthlyAmount: 325 },
     ],
     unplannedExpenses: [],
     envelopeActualizations: [],

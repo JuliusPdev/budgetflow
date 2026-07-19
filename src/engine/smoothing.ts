@@ -7,6 +7,7 @@ import type {
   Month,
   MonthResult,
   PlannedExpense,
+  PlannedExpensePayment,
   PlannedExpenseSettlement,
   UnplannedExpense,
 } from './types';

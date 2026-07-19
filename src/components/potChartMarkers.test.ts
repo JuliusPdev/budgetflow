@@ -45,7 +45,7 @@ function hitMonth(
     potDeduction,
     potAfter: potBeforeExpenses - potDeduction,
     potActual: 0,
-    lockStatus: { kind: 'none' },
+    lockStatus: { kind: 'unlocked' },
   };
 }
 
