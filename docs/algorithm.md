@@ -142,14 +142,16 @@ When the user pays a planned expense early from the savings pot, two separate jo
 
 The funding pass uses **`max(0, potCarry)`** as carry — positive savings from past months reduce how much still needs to be saved, but a negative dip from early payments does **not** accelerate funding. Recovery handles the dip separately.
 
+**Recovery debt sizing** uses `max(0, −potCarry)` once payment months are in the past, so adjusting the **current** month's lock does not move the recommended rate (prevents lock-status oscillation). When the payment happened in the **current** month, the current lock is included in the dip (`max(0, −potActualNow)`).
+
 ### Recovery scheduling
 
 For each early payment where the expense is **fully paid** (`remainingAmount === 0`):
 
-1. Compute the **physical dip**: `max(0, −potActualNow)`.
+1. Compute the **physical dip** (see above).
 2. Assign each payment's `potDeduction` to a recovery window from the payment month through the expense's **original target month** (inclusive).
 3. If assigned recovery exceeds the physical dip, scale down proportionally.
-4. Spread each payment's recovery debt uniformly within its window.
+4. Spread each payment's recovery debt at a **uniform rate over the full window length** (payment month → target month). When the calendar advances, the per-month rate stays the same; only months still in the future receive it.
 
 Partial early payments stay on the **funding** timeline for their remaining balance. Recovery applies only after full payment.
 
@@ -161,13 +163,25 @@ Each month:
 totalRate = fundingRate + recoveryRate
 ```
 
-Simulate the pot from **`potActualNow`**: add `totalRate` each month, subtract remaining expense hits. If any expense month would leave the pot negative, raise rates using the existing binding-constraint logic (`smooth()` on the combined expense schedule with `potActualNow` as carry). Deadlines always win.
+Rates are planned over a **planning window** that may extend back to the earliest recovery payment month (so denominators stay stable when the calendar advances). Feasibility simulates that full window from the actual pot at the planning start, using **real past locks and deductions** for past months and planned rates from the current month forward. If the combined schedule would fail an expense deadline, raise rates using the existing binding-constraint logic (`smooth()` on the combined expense schedule). Deadlines always win.
+
+**Lock status** treats differences under **€1** as on-track so tiny rounding does not flip between “lock more” and “free up”.
 
 Display fields:
 
 - **`setAsideRecommended`** = combined total (minus envelope pot on current month)
 - **`setAsideFunding`** = funding portion
 - **`setAsideRecovery`** = recovery portion
+
+### Debt clearance after the last expense
+
+Recovery repays the **initial early-payment dip** only. Large expense hits can still leave the forecast pot negative after the last planned expense. To satisfy “pot ends at zero,” a **debt-clearance** pass runs after funding + recovery:
+
+1. Simulate the forecast pot through the display window.
+2. If the terminal pot is negative, spread the shortfall evenly over months **after** the last expense month (through the display end).
+3. Clearance is added to **`setAsideFunding`** (not recovery).
+
+Past ledger months show **actual locks** in the set-aside row; recovery and funding sub-rows stay empty (·) — no backfill of planned slices onto closed months.
 
 ### Example: Splitwise paid early, Soundboks due August
 

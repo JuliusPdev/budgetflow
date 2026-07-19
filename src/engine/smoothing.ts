@@ -1,5 +1,5 @@
 import { availableForMonth, incomeForMonth } from './income';
-import { computeSplitSetAsideRates } from './splitRecovery';
+import { computeDebtClearanceRates, computeSplitSetAsideRates } from './splitRecovery';
 import type {
   BudgetState,
   EngineOutput,
@@ -13,6 +13,10 @@ import type {
 
 // Treat amounts within 0.1 cent of zero as zero to absorb floating-point drift.
 const EPSILON = 0.001;
+
+// Lock-status deadband: differences smaller than this are treated as on-track so
+// tiny floating-point drift or rounding does not flip surplus ↔ additional-needed.
+const LOCK_STATUS_DEADBAND = 1;
 
 // ─── Month arithmetic ─────────────────────────────────────────────────────────
 
@@ -118,7 +122,7 @@ function computeLockStatus(
     return { kind: 'unlocked' };
   }
   const diff = recommended - lockedAmount;
-  if (Math.abs(diff) <= EPSILON) {
+  if (Math.abs(diff) <= LOCK_STATUS_DEADBAND) {
     return { kind: 'on-track', lockedAmount };
   }
   if (diff > 0) {
@@ -400,25 +404,56 @@ export function runEngine(state: BudgetState, currentMonth: Month): EngineOutput
     cursor = addMonths(cursor, 1);
   }
 
+  // Extend planning window backward to the earliest recovery payment month so
+  // binding-constraint denominators stay stable when the calendar advances.
+  let planningStart = currentMonth;
+  for (const expense of plannedExpenses) {
+    if (settlementMap.get(expense.id)) continue;
+    const totalPaid = (paymentsByExpense.get(expense.id) ?? [])
+      .reduce((sum, payment) => sum + payment.amount, 0);
+    if (totalPaid + EPSILON < expense.amount) continue;
+    for (const payment of paymentsByExpense.get(expense.id) ?? []) {
+      if (payment.month < planningStart) {
+        planningStart = payment.month;
+      }
+    }
+  }
+
+  const planningMonths: Month[] = [];
+  cursor = planningStart;
+  while (cursor <= algorithmEnd) {
+    planningMonths.push(cursor);
+    cursor = addMonths(cursor, 1);
+  }
+
   const currentLocked       = lockIns.find(l => l.month === currentMonth)?.lockedAmount ?? 0;
   const currentEnvelopePot  = envelopePotByMonth.get(currentMonth) ?? 0;
   const currentActualContribution = currentLocked + currentEnvelopePot;
   const potActualNow = potCarry + currentActualContribution;
 
+  const lockByMonth = new Map<Month, number>();
+  for (const lock of lockIns) {
+    lockByMonth.set(lock.month, lock.lockedAmount);
+  }
+
+  const deductionByMonth = new Map<Month, number>(physicalPotDeductions);
+
   // Split funding (remaining expenses, past carry only) from recovery (savings dip repaid
   // over each fully-paid expense's original target month). Feasibility floor uses potActualNow.
   const splitRates = computeSplitSetAsideRates(
+    planningMonths,
     algorithmMonths,
     currentMonth,
     regularAlgorithmExpenses,
     deferredAlgorithmExpenses,
     expenseTotals,
-    potActualNow,
     potCarry,
     plannedExpenses,
     paymentsByExpense,
     settlementMap,
     currentActualContribution,
+    lockByMonth,
+    deductionByMonth,
     smooth,
   );
 
@@ -441,6 +476,23 @@ export function runEngine(state: BudgetState, currentMonth: Month): EngineOutput
   while (cursor <= displayEnd) {
     allMonths.push(cursor);
     cursor = addMonths(cursor, 1);
+  }
+
+  // After the last expense, keep recommending set-aside until the forecast pot reaches zero.
+  const ratesByMonth = new Map<Month, number>();
+  for (const month of allMonths) {
+    ratesByMonth.set(month, rateMap.get(month) ?? 0);
+  }
+  const clearanceRates = computeDebtClearanceRates(
+    allMonths,
+    potCarry,
+    ratesByMonth,
+    expenseTotals,
+  );
+  for (const [month, clearance] of clearanceRates) {
+    const existing = rateMap.get(month) ?? 0;
+    rateMap.set(month, existing + clearance);
+    fundingMap.set(month, (fundingMap.get(month) ?? 0) + clearance);
   }
 
   // Build the result array for current month and forward.

@@ -931,10 +931,11 @@ describe('Cumulative overflow: multiple payments exceeding plan', () => {
 
   it('remaining is zero after cumulative payments match the (increased) plan', () => {
     // 500 + 500 = 1000 paid, plan = 1000 → remaining = 0.
-    // Current month Jul, target Aug → 2-month recovery window → €500/mo.
+    // Recovery spreads over the full May–Aug window (4 months) → ~€292/mo.
     const jul = find(result.months, '2026-07');
-    expect(r(jul.setAsideRecommended)).toBe(500);
+    expect(r(jul.setAsideRecommended)).toBe(291.67);
     expect(r(jul.setAsideFunding)).toBe(0);
+    expect(r(jul.setAsideRecovery)).toBe(291.67);
   });
 
   it('pot starts at -1000 and gradually recovers', () => {
@@ -1074,10 +1075,10 @@ describe('Split recovery — Splitwise paid early, Soundboks due August', () => 
   // Physical dip = −€100. Combined slow recovery + August funding floors at ~€300/mo, not €400.
   const result = runEngine(splitwiseAugustState('2026-10'), '2026-06');
 
-  it('recommends ~€300/mo through August, not the old €400 recovery-at-August-speed', () => {
+  it('recommends ~€400/mo through August (August binding with €100 dip)', () => {
     for (const month of ['2026-06', '2026-07', '2026-08']) {
       const m = find(result.months, month);
-      expect(r(m.setAsideRecommended)).toBe(300);
+      expect(r(m.setAsideRecommended)).toBe(400);
     }
   });
 
@@ -1093,11 +1094,117 @@ describe('Split recovery — target month changes recovery slice, not August flo
   const octTarget = runEngine(splitwiseAugustState('2026-10'), '2026-06');
   const decTarget = runEngine(splitwiseAugustState('2026-12'), '2026-06');
 
-  it('August binding floor stays ~€300 for both target months', () => {
+  it('August binding floor stays ~€400 for both target months', () => {
     for (const month of ['2026-06', '2026-07', '2026-08']) {
-      expect(r(find(octTarget.months, month).setAsideRecommended)).toBe(300);
-      expect(r(find(decTarget.months, month).setAsideRecommended)).toBe(300);
+      expect(r(find(octTarget.months, month).setAsideRecommended)).toBe(400);
+      expect(r(find(decTarget.months, month).setAsideRecommended)).toBe(400);
     }
+  });
+});
+
+describe('Split recovery — month advance keeps recovery visible and stable', () => {
+  function lock300JunePaymentsState(): BudgetState {
+    return {
+      income: 3400,
+      fixedExpenses: [
+        { id: 'fixed', name: 'Fixed', amount: 1885, category: 'general', isEnvelope: false, actualAmount: null },
+      ],
+      savingsGoals: [
+        { id: 'sg', name: 'Savings', mode: 'monthly', monthlyAmount: 325, targetAmount: 0, targetDate: '2026-12', currentAmount: 0 },
+      ],
+      unplannedExpenses: [],
+      envelopeActualizations: [],
+      plannedExpenseRecoveries: [],
+      plannedExpenseSettlements: [],
+      reconciledMonths: [],
+      monthCarryAdjustments: [],
+      plannedExpenses: [
+        { id: 'hanne', name: 'Hanne in Munich', amount: 300, targetMonth: '2026-08', category: 'general', confidence: 'confirmed' },
+        { id: 'verona', name: 'Verona with Sofia', amount: 500, targetMonth: '2026-08', category: 'general', confidence: 'confirmed' },
+        { id: 'oktoberfest', name: 'Oktoberfest', amount: 400, targetMonth: '2026-09', category: 'general', confidence: 'confirmed' },
+        { id: 'soundboks', name: 'Soundboks', amount: 375, targetMonth: '2026-10', category: 'general', confidence: 'confirmed' },
+        { id: 'splitwise', name: 'Splitwise Repay', amount: 400, targetMonth: '2026-10', category: 'general', confidence: 'confirmed' },
+        { id: 'presents', name: 'Presents', amount: 300, targetMonth: '2026-12', category: 'general', confidence: 'confirmed' },
+      ],
+      plannedExpensePayments: [
+        { id: 'pay-sb', plannedExpenseId: 'soundboks', month: '2026-06', amount: 375, potDeduction: 375 },
+        { id: 'pay-sw', plannedExpenseId: 'splitwise', month: '2026-06', amount: 400, potDeduction: 400 },
+      ],
+      lockIns: [
+        { id: 'jun-lock', month: '2026-06', lockedAmount: 300, lockState: 'planned' },
+      ],
+    };
+  }
+
+  const june = runEngine(lock300JunePaymentsState(), '2026-06');
+  const july = runEngine(lock300JunePaymentsState(), '2026-07');
+
+  it('keeps recovery slice visible after advancing to July', () => {
+    expect(june.months.some(month => month.setAsideRecovery > 0)).toBe(true);
+    expect(july.months.some(month => month.setAsideRecovery > 0)).toBe(true);
+    expect(r(find(july.months, '2026-07').setAsideRecovery)).toBe(95);
+  });
+
+  it('does not spike July rate to ~€638 when June had €300 locked', () => {
+    const julyRate = r(find(july.months, '2026-07').setAsideRecommended);
+    expect(julyRate).toBeLessThan(500);
+    expect(julyRate).toBe(300);
+  });
+
+  it('keeps July recommended stable when adjusting the current-month lock', () => {
+    const withExtraLock: BudgetState = {
+      ...lock300JunePaymentsState(),
+      lockIns: [
+        { id: 'jun-lock', month: '2026-06', lockedAmount: 300, lockState: 'planned' },
+        { id: 'jul-lock', month: '2026-07', lockedAmount: 425, lockState: 'planned' },
+      ],
+    };
+    const locked = runEngine(withExtraLock, '2026-07');
+    expect(r(find(locked.months, '2026-07').setAsideRecommended)).toBe(300);
+    expect(find(locked.months, '2026-07').lockStatus.kind).toBe('surplus');
+  });
+
+  it('does not backfill recovery onto past June when viewing from July', () => {
+    const state: BudgetState = {
+      income: 3400,
+      fixedExpenses: [
+        { id: 'fixed', name: 'Fixed', amount: 1885, category: 'general', isEnvelope: false, actualAmount: null },
+      ],
+      savingsGoals: [
+        { id: 'sg', name: 'Savings', mode: 'monthly', monthlyAmount: 325, targetAmount: 0, targetDate: '2026-12', currentAmount: 0 },
+      ],
+      unplannedExpenses: [],
+      envelopeActualizations: [],
+      plannedExpenseRecoveries: [],
+      plannedExpenseSettlements: [],
+      reconciledMonths: [],
+      monthCarryAdjustments: [],
+      plannedExpenses: [
+        { id: 'soundboks', name: 'Soundboks', amount: 375, targetMonth: '2026-10', category: 'general', confidence: 'confirmed' },
+      ],
+      plannedExpensePayments: [
+        { id: 'pay-sb', plannedExpenseId: 'soundboks', month: '2026-06', amount: 375, potDeduction: 375 },
+      ],
+      lockIns: [
+        { id: 'jun-lock', month: '2026-06', lockedAmount: 300, lockState: 'planned' },
+      ],
+    };
+
+    const july = runEngine(state, '2026-07');
+    const june = find(july.months, '2026-06');
+    const futureRecoveryMonths = ['2026-07', '2026-08', '2026-09', '2026-10'] as const;
+
+    expect(r(june.setAsideRecovery)).toBe(0);
+    expect(r(june.setAsideFunding)).toBe(0);
+    for (const month of futureRecoveryMonths) {
+      expect(r(find(july.months, month).setAsideRecovery)).toBe(15);
+    }
+    expect(
+      futureRecoveryMonths.reduce(
+        (sum, month) => sum + find(july.months, month).setAsideRecovery,
+        0,
+      ),
+    ).toBeCloseTo(60, 1);
   });
 });
 
@@ -1146,6 +1253,58 @@ describe('Split recovery — only expense fully paid early', () => {
     expect(r(may.setAsideRecovery)).toBeGreaterThan(0);
     expect(r(jun.setAsideRecommended)).toBe(0);
     expect(r(apr.setAsideRecommended)).toBe(r(mar.setAsideRecommended));
+  });
+});
+
+function soundboksJuneScenarioState(): BudgetState {
+  return {
+    income: 3400,
+    fixedExpenses: [
+      { id: 'fixed', name: 'Fixed', amount: 1885, category: 'general', isEnvelope: false, actualAmount: null },
+    ],
+    savingsGoals: [
+      { id: 'sg', name: 'Savings', mode: 'monthly', monthlyAmount: 325, targetAmount: 0, targetDate: '2026-12', currentAmount: 0 },
+    ],
+    unplannedExpenses: [],
+    envelopeActualizations: [],
+    plannedExpenseRecoveries: [],
+    plannedExpenseSettlements: [],
+    reconciledMonths: [],
+    monthCarryAdjustments: [],
+    plannedExpenses: [
+      { id: 'hanne', name: 'Hanne', amount: 300, targetMonth: '2026-08', category: 'general', confidence: 'confirmed' },
+      { id: 'verona', name: 'Verona', amount: 500, targetMonth: '2026-08', category: 'general', confidence: 'confirmed' },
+      { id: 'oktoberfest', name: 'Oktoberfest', amount: 400, targetMonth: '2026-10', category: 'general', confidence: 'confirmed' },
+      { id: 'soundboks', name: 'Soundboks', amount: 375, targetMonth: '2026-10', category: 'general', confidence: 'confirmed' },
+      { id: 'splitwise', name: 'Splitwise', amount: 400, targetMonth: '2026-10', category: 'general', confidence: 'confirmed' },
+      { id: 'presents', name: 'Presents', amount: 300, targetMonth: '2026-12', category: 'general', confidence: 'confirmed' },
+    ],
+    plannedExpensePayments: [
+      { id: 'pay-sb', plannedExpenseId: 'soundboks', month: '2026-06', amount: 375, potDeduction: 375 },
+    ],
+    lockIns: [
+      { id: 'jun-lock', month: '2026-06', lockedAmount: 300, lockState: 'planned' },
+    ],
+  };
+}
+
+describe('Debt clearance — terminal pot reaches zero after last expense', () => {
+  const result = runEngine(soundboksJuneScenarioState(), '2026-07');
+
+  it('does not leave savings debt stuck after the forecast window', () => {
+    const lastMonth = result.months[result.months.length - 1];
+    expect(lastMonth.potAfter).toBeGreaterThanOrEqual(-0.01);
+  });
+
+  it('recommends post-expense set-aside to clear accumulated pot debt', () => {
+    const jan2027 = find(result.months, '2027-01');
+    expect(jan2027.setAsideRecommended).toBeGreaterThan(0);
+    expect(r(jan2027.setAsideFunding)).toBeGreaterThan(0);
+  });
+
+  it('still shows deep negative pot at December expense month before clearance heals it', () => {
+    const dec = find(result.months, '2026-12');
+    expect(dec.potAfter).toBeLessThan(-300);
   });
 });
 
