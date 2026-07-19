@@ -63,6 +63,7 @@ function App() {
         clearAdditionalIncomeForMonth={state.clearAdditionalIncomeForMonth}
         recordEarlyPayment={state.recordEarlyPayment}
         updateEarlyPayment={state.updateEarlyPayment}
+        moveEarlyPayment={state.moveEarlyPayment}
         removeEarlyPayment={state.removeEarlyPayment}
         lockIn={state.lockIn}
         freeUp={state.freeUp}

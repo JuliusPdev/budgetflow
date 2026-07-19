@@ -3224,6 +3224,31 @@ a { color: inherit; }
   color: var(--color-irregular-text);
 }
 
+.v6-ledger-planned-cell-btn--draggable {
+  cursor: grab;
+}
+
+.v6-ledger-planned-cell-btn--draggable:active {
+  cursor: grabbing;
+}
+
+.v6-ledger-value.is-drop-valid {
+  outline: 2px dashed color-mix(in srgb, var(--color-accent) 45%, transparent);
+  outline-offset: -2px;
+  background: color-mix(in srgb, var(--color-accent) 6%, transparent);
+}
+
+.v6-ledger-value.is-drop-hover.is-drop-valid {
+  outline-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+}
+
+.v6-ledger-value.is-drop-invalid {
+  outline: 2px dashed color-mix(in srgb, var(--color-critical) 35%, transparent);
+  outline-offset: -2px;
+  opacity: 0.55;
+}
+
 .v6-btn-danger-text {
   color: var(--color-critical-text);
   margin-right: auto;

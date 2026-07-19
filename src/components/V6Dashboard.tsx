@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react';
 import { ChevronDown, ChevronRight, Settings2, Undo2, X } from 'lucide-react';
 import { runEngine } from '../engine/smoothing';
 import { formatCurrency, formatCurrencyExact, formatMonth, formatSignedCurrency } from '../utils/formatting';
@@ -8,8 +8,17 @@ import {
 } from './PlannedExpenseFundingModal';
 import {
   plannedExpenseLedgerCell,
+  plannedExpenseLedgerColumnTotal,
   setAsideLedgerAmount,
 } from '../utils/ledgerDisplay';
+import {
+  canDragLedgerCell,
+  canDropPlannedExpense,
+  decodePlannedExpenseDragPayload,
+  encodePlannedExpenseDragPayload,
+  PLANNED_EXPENSE_DRAG_MIME,
+  type PlannedExpenseDragPayload,
+} from '../utils/plannedExpenseDrag';
 import {
   buildPlannedExpenseMarkers,
   chartPadTop,
@@ -44,6 +53,7 @@ interface Props {
   clearAdditionalIncomeForMonth: (month: Month) => void;
   recordEarlyPayment: (plannedExpenseId: string, paymentMonth: Month, amount: number, overflowToFreeBudget?: number) => void;
   updateEarlyPayment: (paymentId: string, amount: number, overflowToFreeBudget?: number) => void;
+  moveEarlyPayment: (paymentId: string, newMonth: Month) => void;
   removeEarlyPayment: (paymentId: string) => void;
   lockIn: (amount: number) => void;
   freeUp: (amount: number) => void;
@@ -258,6 +268,7 @@ function ChartPlannedExpenseHit({
   const labelPositions = isMulti
     ? layoutExpenseLabels(totalY, marker.expenses.length)
     : [];
+  const singleExpense = marker.expenses[0];
 
   return (
     <g className="v6-chart-hit">
@@ -282,13 +293,14 @@ function ChartPlannedExpenseHit({
         <>
           {marker.expenses.map((expense, index) => {
             const { nameY, amountY } = labelPositions[index];
+            const paidClass = expense.paidAtTarget ? ' v6-chart-expense--paid' : '';
             return (
               <g key={`${marker.month}-${expense.name}-${index}`}>
                 <text
                   x={marker.x}
                   y={nameY}
                   textAnchor="middle"
-                  className="v6-chart-expense-name"
+                  className={`v6-chart-expense-name${paidClass}`}
                 >
                   {expense.name}
                 </text>
@@ -296,7 +308,7 @@ function ChartPlannedExpenseHit({
                   x={marker.x}
                   y={amountY}
                   textAnchor="middle"
-                  className="v6-chart-expense-amount"
+                  className={`v6-chart-expense-amount${paidClass}`}
                 >
                   -{formatCurrency(expense.amount)}
                 </text>
@@ -318,9 +330,9 @@ function ChartPlannedExpenseHit({
             x={marker.x}
             y={totalY - CHART_ITEM_GAP - CHART_NAME_TO_AMOUNT}
             textAnchor="middle"
-            className="v6-chart-label"
+            className={`v6-chart-label${singleExpense?.paidAtTarget ? ' v6-chart-expense--paid' : ''}`}
           >
-            {marker.expenses[0]?.name ?? ''}
+            {singleExpense?.name ?? ''}
           </text>
           <text
             x={marker.x}
@@ -394,10 +406,12 @@ function PotTrajectoryChart({
   engine,
   currentMonth,
   monthWidth,
+  payments,
 }: {
   engine: EngineOutput;
   currentMonth: Month;
   monthWidth: number;
+  payments: PlannedExpensePayment[];
 }) {
   const months = engine.months;
   const width = timelineTotalWidth(months.length, monthWidth);
@@ -431,7 +445,14 @@ function PotTrajectoryChart({
   const yForDebt = (amount: number) => zeroY + (Math.abs(amount) / maxDebt) * (chartBottom - zeroY);
   const potPoints = buildPotLinePoints(months, padLeft, monthWidth, yForPotPositive);
   const savingsDebtPoints = buildDebtLinePoints(months, padLeft, monthWidth, zeroY, yForDebt);
-  const expenseMarkers = buildPlannedExpenseMarkers(months, padLeft, monthWidth, yForPotPositive, yForDebt);
+  const expenseMarkers = buildPlannedExpenseMarkers(
+    months,
+    payments,
+    padLeft,
+    monthWidth,
+    yForPotPositive,
+    yForDebt,
+  );
   const potLinePath = smoothPath(potPoints);
   const savingsDebtLinePath = smoothPath(savingsDebtPoints);
   const areaPath = `${potLinePath} L${potPoints[potPoints.length - 1]?.x ?? padLeft},${zeroY} L${potPoints[0]?.x ?? padLeft},${zeroY} Z`;
@@ -642,7 +663,7 @@ function SetAsideLockCard({
   const currentLockIn = budget.lockIns.find(lock => lock.month === currentMonth);
   const lockState = currentLockIn?.lockState ?? 'planned';
   const lockedDisplay = lockStatus.kind === 'unlocked' ? 0 : lockStatus.lockedAmount;
-  const displayThreshold = 0.5;
+  const displayThreshold = 1;
   const effectivelyOnTrack =
     (lockStatus.kind === 'additional-needed' && lockStatus.additionalNeeded < displayThreshold) ||
     (lockStatus.kind === 'surplus' && lockStatus.surplus < displayThreshold);
@@ -1314,6 +1335,7 @@ function HorizontalLedger({
   clearAdditionalIncomeForMonth,
   recordEarlyPayment,
   updateEarlyPayment,
+  moveEarlyPayment,
   removeEarlyPayment,
 }: {
   engine: EngineOutput;
@@ -1328,21 +1350,31 @@ function HorizontalLedger({
   clearAdditionalIncomeForMonth: (month: Month) => void;
   recordEarlyPayment: (plannedExpenseId: string, paymentMonth: Month, amount: number, overflowToFreeBudget?: number) => void;
   updateEarlyPayment: (paymentId: string, amount: number, overflowToFreeBudget?: number) => void;
+  moveEarlyPayment: (paymentId: string, newMonth: Month) => void;
   removeEarlyPayment: (paymentId: string) => void;
 }) {
   const [editingExpense, setEditingExpense] = useState<{ expense: PlannedExpense; initialFocus: 'name' | 'amount' } | null>(null);
   const [incomeModalOpen, setIncomeModalOpen] = useState(false);
   const [incomeExpanded, setIncomeExpanded] = useState(true);
   const [setAsideExpanded, setSetAsideExpanded] = useState(false);
+  const [plannedExpensesExpanded, setPlannedExpensesExpanded] = useState(false);
   const [earlyPayment, setEarlyPayment] = useState<{
     expense: PlannedExpense;
     paymentMonth: Month;
     paymentId?: string;
   } | null>(null);
+  const [activeDrag, setActiveDrag] = useState<PlannedExpenseDragPayload | null>(null);
+  const [dropHighlightMonth, setDropHighlightMonth] = useState<Month | null>(null);
+  const [pendingTargetMove, setPendingTargetMove] = useState<{
+    expense: PlannedExpense;
+    targetMonth: Month;
+  } | null>(null);
+  const dragClickGuardRef = useRef(false);
   const months = engine.months;
   const sortedPlannedExpenses = [...budget.plannedExpenses].sort(comparePlannedExpensesByTime);
   const gridStyle = timelineGridColumns(months.length, monthWidth);
   const payments = budget.plannedExpensePayments ?? [];
+  const settlements = budget.plannedExpenseSettlements ?? [];
   const showSetAsideSplit = months.some(month => month.setAsideRecovery > 0);
   const showAdditionalIncomeRow = months.some(
     month => (budget.additionalIncomeByMonth?.[month.month] ?? 0) > 0,
@@ -1389,6 +1421,80 @@ function HorizontalLedger({
   ];
 
   const showSavingsDebt = months.some(month => month.potAfter < 0);
+
+  function beginPlannedExpenseDrag(
+    event: DragEvent<HTMLButtonElement>,
+    payload: PlannedExpenseDragPayload,
+  ) {
+    dragClickGuardRef.current = true;
+    setActiveDrag(payload);
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData(PLANNED_EXPENSE_DRAG_MIME, encodePlannedExpenseDragPayload(payload));
+  }
+
+  function endPlannedExpenseDrag() {
+    setActiveDrag(null);
+    setDropHighlightMonth(null);
+    window.setTimeout(() => {
+      dragClickGuardRef.current = false;
+    }, 0);
+  }
+
+  function readDragPayload(event: DragEvent): PlannedExpenseDragPayload | null {
+    const raw = event.dataTransfer.getData(PLANNED_EXPENSE_DRAG_MIME);
+    return raw ? decodePlannedExpenseDragPayload(raw) : activeDrag;
+  }
+
+  function applyTargetMonthMove(expense: PlannedExpense, targetMonth: Month) {
+    const draft: Omit<PlannedExpense, 'id'> = {
+      name: expense.name,
+      amount: expense.amount,
+      targetMonth,
+      category: expense.category,
+      confidence: expense.confidence,
+      ...(expense.startFromMonth ? { startFromMonth: expense.startFromMonth } : {}),
+    };
+    if (shouldAskPlannedExpenseFundingTiming(budget, engine, draft, currentMonth, {
+      replaceExpenseId: expense.id,
+    })) {
+      setPendingTargetMove({ expense, targetMonth });
+      return;
+    }
+    updatePlannedExpense(expense.id, { targetMonth });
+  }
+
+  function handlePlannedExpenseDrop(
+    event: DragEvent<HTMLDivElement>,
+    expense: PlannedExpense,
+    dropMonth: Month,
+  ) {
+    event.preventDefault();
+    const payload = readDragPayload(event);
+    endPlannedExpenseDrag();
+    if (!payload || payload.expenseId !== expense.id) return;
+    if (!canDropPlannedExpense(payload, expense, dropMonth, currentMonth, payments, settlements)) {
+      return;
+    }
+    if (payload.kind === 'target') {
+      applyTargetMonthMove(expense, dropMonth);
+      return;
+    }
+    if (payload.paymentId) {
+      moveEarlyPayment(payload.paymentId, dropMonth);
+    }
+  }
+
+  function isValidDropTarget(expense: PlannedExpense, dropMonth: Month): boolean {
+    if (!activeDrag || activeDrag.expenseId !== expense.id) return false;
+    return canDropPlannedExpense(
+      activeDrag,
+      expense,
+      dropMonth,
+      currentMonth,
+      payments,
+      settlements,
+    );
+  }
 
   return (
     <div className="v6-ledger-scroll">
@@ -1571,10 +1677,40 @@ function HorizontalLedger({
 
         {sortedPlannedExpenses.length > 0 && (
           <>
-            <div className="v6-ledger-row v6-ledger-group" style={gridStyle}>
-              <div>Planned expenses</div>
-              {months.map(month => <div key={month.month} className={month.month === currentMonth ? 'is-current' : ''} />)}
+            <div className="v6-ledger-row v6-ledger-group v6-ledger-group--toggle" style={gridStyle}>
+              <div className="v6-ledger-group-label">
+                <button
+                  type="button"
+                  className="v6-ledger-section-toggle v6-ledger-tone--amber"
+                  aria-expanded={plannedExpensesExpanded}
+                  aria-controls="ledger-section-planned-expenses"
+                  data-testid="ledger-section-toggle-planned-expenses"
+                  onClick={() => setPlannedExpensesExpanded(expanded => !expanded)}
+                >
+                  {plannedExpensesExpanded
+                    ? <ChevronDown size={14} aria-hidden />
+                    : <ChevronRight size={14} aria-hidden />}
+                  <span>Planned expenses</span>
+                </button>
+              </div>
+              {months.map(month => {
+                const total = plannedExpenseLedgerColumnTotal(
+                  sortedPlannedExpenses,
+                  month.month,
+                  payments,
+                );
+                return (
+                  <div
+                    key={month.month}
+                    className={`v6-ledger-value v6-ledger-tone--amber ${month.month === currentMonth ? 'is-current' : ''} ${month.month < currentMonth ? 'is-past' : ''}`}
+                  >
+                    {formatLedgerCellAmount(-total)}
+                  </div>
+                );
+              })}
             </div>
+            {plannedExpensesExpanded && (
+            <div id="ledger-section-planned-expenses">
             {sortedPlannedExpenses.map(expense => {
               return (
               <div key={expense.id} className="v6-ledger-row" style={gridStyle}>
@@ -1589,36 +1725,101 @@ function HorizontalLedger({
                     cell.kind === 'empty' &&
                     month.month < expense.targetMonth &&
                     month.month <= currentMonth;
+                  const canDrag = canDragLedgerCell(cell, expense.id, settlements);
+                  const dropValid = isValidDropTarget(expense, month.month);
+                  const dropInvalid = activeDrag?.expenseId === expense.id && !dropValid;
                   return (
                   <div
                     key={month.month}
-                    className={`v6-ledger-value v6-ledger-tone--amber ${month.month === currentMonth ? 'is-current' : ''} ${month.month < currentMonth ? 'is-past' : ''}`}
+                    className={[
+                      'v6-ledger-value',
+                      'v6-ledger-tone--amber',
+                      month.month === currentMonth ? 'is-current' : '',
+                      month.month < currentMonth ? 'is-past' : '',
+                      dropValid ? 'is-drop-valid' : '',
+                      dropInvalid ? 'is-drop-invalid' : '',
+                      dropHighlightMonth === month.month && dropValid ? 'is-drop-hover' : '',
+                    ].filter(Boolean).join(' ')}
+                    onDragOver={event => {
+                      if (!activeDrag || activeDrag.expenseId !== expense.id) return;
+                      if (!canDropPlannedExpense(
+                        activeDrag,
+                        expense,
+                        month.month,
+                        currentMonth,
+                        payments,
+                        settlements,
+                      )) {
+                        return;
+                      }
+                      event.preventDefault();
+                      event.dataTransfer.dropEffect = 'move';
+                      setDropHighlightMonth(month.month);
+                    }}
+                    onDragLeave={() => {
+                      if (dropHighlightMonth === month.month) {
+                        setDropHighlightMonth(null);
+                      }
+                    }}
+                    onDrop={event => handlePlannedExpenseDrop(event, expense, month.month)}
                   >
                     {cell.kind === 'early-payment' ? (
                       <button
                         type="button"
-                        className="v6-ledger-planned-cell-btn v6-ledger-planned-early-btn"
-                        onClick={() => setEarlyPayment({
-                          expense,
-                          paymentMonth: month.month,
+                        className="v6-ledger-planned-cell-btn v6-ledger-planned-early-btn v6-ledger-planned-cell-btn--draggable"
+                        draggable={canDrag}
+                        onDragStart={event => beginPlannedExpenseDrag(event, {
+                          expenseId: expense.id,
+                          kind: 'early-payment',
+                          fromMonth: month.month,
                           paymentId: cell.paymentId,
                         })}
-                        aria-label={`Edit early payment for ${expense.name} in ${formatMonth(month.month)}`}
-                        title={`Edit early payment in ${formatMonth(month.month)}`}
+                        onDragEnd={endPlannedExpenseDrag}
+                        onClick={() => {
+                          if (dragClickGuardRef.current) return;
+                          setEarlyPayment({
+                            expense,
+                            paymentMonth: month.month,
+                            paymentId: cell.paymentId,
+                          });
+                        }}
+                        aria-label={`Edit early payment for ${expense.name} in ${formatMonth(month.month)}. Drag to move to another month.`}
+                        title={`Early payment in ${formatMonth(month.month)} — drag to move`}
                       >
                         -{formatCurrency(cell.amount).replace('€', '')}
                       </button>
                     ) : cell.kind === 'target' ? (
                       <button
                         type="button"
-                        className="v6-ledger-planned-cell-btn"
-                        onClick={() => setEditingExpense({ expense, initialFocus: 'amount' })}
-                        onDoubleClick={() => setEditingExpense({ expense, initialFocus: 'amount' })}
-                        aria-label={`Edit amount for ${expense.name} in ${formatMonth(month.month)}`}
-                        title={`Planned amount due in ${formatMonth(month.month)}`}
+                        className="v6-ledger-planned-cell-btn v6-ledger-planned-cell-btn--draggable"
+                        draggable={canDrag}
+                        onDragStart={event => beginPlannedExpenseDrag(event, {
+                          expenseId: expense.id,
+                          kind: 'target',
+                          fromMonth: month.month,
+                        })}
+                        onDragEnd={endPlannedExpenseDrag}
+                        onClick={() => {
+                          if (dragClickGuardRef.current) return;
+                          setEditingExpense({ expense, initialFocus: 'amount' });
+                        }}
+                        onDoubleClick={() => {
+                          if (dragClickGuardRef.current) return;
+                          setEditingExpense({ expense, initialFocus: 'amount' });
+                        }}
+                        aria-label={`Edit amount for ${expense.name} in ${formatMonth(month.month)}. Drag to move deadline to another month.`}
+                        title={`Due in ${formatMonth(month.month)} — drag to move deadline`}
                       >
                         -{formatCurrency(cell.amount).replace('€', '')}
                       </button>
+                    ) : cell.kind === 'target-paid' ? (
+                      <span
+                        className="v6-ledger-planned-paid"
+                        aria-label={`${expense.name} fully paid before ${formatMonth(month.month)}`}
+                        title={`Fully paid — ${formatCurrency(cell.amount)} planned`}
+                      >
+                        -{formatCurrency(cell.amount).replace('€', '')}
+                      </span>
                     ) : canRecordEarly ? (
                       <button
                         type="button"
@@ -1638,6 +1839,8 @@ function HorizontalLedger({
               </div>
               );
             })}
+            </div>
+            )}
           </>
         )}
       </div>
@@ -1749,6 +1952,35 @@ function HorizontalLedger({
           onSave={changes => {
             updatePlannedExpense(editingExpense.expense.id, changes);
             setEditingExpense(null);
+          }}
+        />
+      )}
+
+      {pendingTargetMove && (
+        <PlannedExpenseFundingModal
+          draft={{
+            name: pendingTargetMove.expense.name,
+            amount: pendingTargetMove.expense.amount,
+            targetMonth: pendingTargetMove.targetMonth,
+            category: pendingTargetMove.expense.category,
+            confidence: pendingTargetMove.expense.confidence,
+            ...(pendingTargetMove.expense.startFromMonth
+              ? { startFromMonth: pendingTargetMove.expense.startFromMonth }
+              : {}),
+          }}
+          budget={budget}
+          engine={engine}
+          currentMonth={currentMonth}
+          replaceExpenseId={pendingTargetMove.expense.id}
+          onClose={() => setPendingTargetMove(null)}
+          onConfirm={confirmed => {
+            updatePlannedExpense(pendingTargetMove.expense.id, {
+              targetMonth: confirmed.targetMonth,
+              ...(confirmed.startFromMonth
+                ? { startFromMonth: confirmed.startFromMonth }
+                : { resetStartFromMonth: true }),
+            });
+            setPendingTargetMove(null);
           }}
         />
       )}
@@ -2057,6 +2289,7 @@ export default function V6Dashboard({
   clearAdditionalIncomeForMonth,
   recordEarlyPayment,
   updateEarlyPayment,
+  moveEarlyPayment,
   removeEarlyPayment,
   lockIn,
   freeUp,
@@ -2149,7 +2382,12 @@ export default function V6Dashboard({
             onScroll={event => syncTimelineScroll(event.currentTarget)}
           >
             <div className="v6-timeline-canvas" style={{ width: timelineWidth, minWidth: '100%' }}>
-              <PotTrajectoryChart engine={engine} currentMonth={currentMonth} monthWidth={monthWidth} />
+              <PotTrajectoryChart
+                engine={engine}
+                currentMonth={currentMonth}
+                monthWidth={monthWidth}
+                payments={budget.plannedExpensePayments ?? []}
+              />
             </div>
           </div>
           <div className="v6-ledger-heading">
@@ -2175,6 +2413,7 @@ export default function V6Dashboard({
                 clearAdditionalIncomeForMonth={clearAdditionalIncomeForMonth}
                 recordEarlyPayment={recordEarlyPayment}
                 updateEarlyPayment={updateEarlyPayment}
+                moveEarlyPayment={moveEarlyPayment}
                 removeEarlyPayment={removeEarlyPayment}
               />
             </div>

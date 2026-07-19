@@ -539,6 +539,33 @@ export function useBudgetState(currentMonth: Month) {
     });
   }
 
+  function moveEarlyPayment(paymentId: string, newMonth: Month): void {
+    update(b => {
+      const payment = (b.plannedExpensePayments ?? []).find(p => p.id === paymentId);
+      if (!payment || payment.month === newMonth) return b;
+
+      const oldMonth = payment.month;
+      const unplannedExpenses = b.unplannedExpenses.map(u => {
+        if (
+          u.linkedPlannedExpenseId === payment.plannedExpenseId
+          && u.month === oldMonth
+          && u.name.endsWith('overpayment')
+        ) {
+          return { ...u, month: newMonth };
+        }
+        return u;
+      });
+
+      return {
+        ...b,
+        plannedExpensePayments: (b.plannedExpensePayments ?? []).map(p =>
+          p.id === paymentId ? { ...p, month: newMonth } : p
+        ),
+        unplannedExpenses,
+      };
+    });
+  }
+
   function removeEarlyPayment(paymentId: string): void {
     update(b => ({
       ...b,
@@ -642,6 +669,7 @@ export function useBudgetState(currentMonth: Month) {
     addPlannedExpensePayment,
     recordEarlyPayment,
     updateEarlyPayment,
+    moveEarlyPayment,
     removeEarlyPayment,
     undo,
     completeOnboarding,
