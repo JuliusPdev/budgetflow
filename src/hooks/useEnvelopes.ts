@@ -63,8 +63,14 @@ export function useEnvelopes(store: EnvelopeStore) {
     setEnvelopes((current) => [...current.slice(0, index), envelope, ...current.slice(index)]);
   }
 
+  /** Swaps the whole list for another — used when restoring a backup. */
+  function replaceAllEnvelopes(replacement: Envelope[]): void {
+    setEnvelopes(replacement);
+  }
+
   return {
     envelopes,
+    replaceAllEnvelopes,
     isLoading,
     storageProblem,
     addEnvelope,

@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { Backup } from './components/Backup';
 import { EmptyStart, ExampleBanner } from './components/ExampleNotice';
 import { ExpenseList, NEW_EXPENSE } from './components/ExpenseList';
 import { LedgerColumns, LedgerRows } from './components/Ledger';
@@ -32,6 +33,7 @@ export default function App() {
     updateEnvelope,
     removeEnvelope,
     restoreEnvelope,
+    replaceAllEnvelopes,
   } = useEnvelopes(store);
 
   // Until the first real expense exists, show examples (never saved),
@@ -128,6 +130,8 @@ export default function App() {
             openForm={openForm}
             onOpenFormChange={setOpenForm}
           />
+
+          <Backup envelopes={savedEnvelopes} onRestore={replaceAllEnvelopes} />
         </main>
       )}
     </div>

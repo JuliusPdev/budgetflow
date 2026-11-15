@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import type { Envelope } from '../engine/types';
 import {
   createLocalStore,
+  parseBackup,
+  serializeBackup,
   STORAGE_KEY,
   UNREADABLE_BACKUP_KEY,
   type KeyValueDrawer,
@@ -63,5 +65,18 @@ describe('envelope store', () => {
 
     expect(await createLocalStore(drawer).load()).toEqual([]);
     expect(drawer.contents.get('budgetflow-v1')).toBe('{"budget":{}}');
+  });
+});
+
+describe('backup files', () => {
+  it('reads back exactly what was written', () => {
+    const paidTrip = { ...trip, id: 'paid', paidMonth: '2027-01' };
+    expect(parseBackup(serializeBackup([trip, paidTrip]))).toEqual([trip, paidTrip]);
+  });
+
+  it('refuses files that are not BudgetFlow backups', () => {
+    for (const text of ['', 'hello', '{"version":2,"envelopes":[]}', '{"envelopes":[{"id":"x"}],"version":1}']) {
+      expect(parseBackup(text)).toBeNull();
+    }
   });
 });

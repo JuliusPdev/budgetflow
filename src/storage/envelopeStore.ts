@@ -56,6 +56,21 @@ function parseSavedData(raw: string): Envelope[] | null {
   }
 }
 
+/**
+ * The text of a backup file: the same shape as saved data, spread over lines
+ * so it stays readable in a text editor.
+ */
+export function serializeBackup(envelopes: Envelope[]): string {
+  const data: SavedData = { version: 1, envelopes };
+  return JSON.stringify(data, null, 2);
+}
+
+/** The envelopes in a backup file, or null if it isn't a valid BudgetFlow backup. */
+export function parseBackup(text: string): Envelope[] | null {
+  // Same checks as reading the browser's storage, so both agree on what's valid.
+  return parseSavedData(text);
+}
+
 export function createLocalStore(drawer: KeyValueDrawer): EnvelopeStore {
   return {
     async load() {
