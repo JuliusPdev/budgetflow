@@ -43,6 +43,9 @@ export interface Envelope {
   paidMonth?: Month;
 }
 
+/** An envelope's own details, without its id — what a form edits. */
+export type EnvelopeFields = Omit<Envelope, 'id'>;
+
 /**
  * Everything BudgetFlow saves. The version number lets a future app
  * recognize data written in an older shape and convert it instead of crashing.

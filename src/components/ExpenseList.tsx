@@ -1,0 +1,154 @@
+import { useState } from 'react';
+import type { Envelope, EnvelopeFields, Month } from '../engine/types';
+import { formatEuros, formatMonthShort } from '../utils/format';
+import { ExpenseForm } from './ExpenseForm';
+
+interface ExpenseListProps {
+  envelopes: Envelope[];
+  currentMonth: Month;
+  onAdd: (fields: EnvelopeFields) => void;
+  onUpdate: (id: string, fields: EnvelopeFields) => void;
+  onRemove: (id: string) => void;
+  onRestore: (envelope: Envelope, index: number) => void;
+}
+
+const NEW_EXPENSE = 'new';
+
+/** Your known future expenses: add, edit in place, delete with undo. */
+export function ExpenseList({ envelopes, currentMonth, onAdd, onUpdate, onRemove, onRestore }: ExpenseListProps) {
+  // Which form is open: an envelope id, NEW_EXPENSE, or none. One at a time.
+  const [openForm, setOpenForm] = useState<string | null>(null);
+  const [lastDeleted, setLastDeleted] = useState<{ envelope: Envelope; index: number } | null>(null);
+
+  const byDueMonth = [...envelopes].sort(
+    (a, b) => a.dueMonth.localeCompare(b.dueMonth) || a.name.localeCompare(b.name),
+  );
+
+  function openFormFor(formKey: string): void {
+    setOpenForm(formKey);
+    setLastDeleted(null);
+  }
+
+  function handleDelete(envelope: Envelope): void {
+    // Remember its position in the saved list, so Undo restores it exactly.
+    const index = envelopes.findIndex((candidate) => candidate.id === envelope.id);
+    onRemove(envelope.id);
+    setLastDeleted({ envelope, index });
+    setOpenForm(null);
+  }
+
+  function handleUndo(): void {
+    if (lastDeleted === null) return;
+    onRestore(lastDeleted.envelope, lastDeleted.index);
+    setLastDeleted(null);
+  }
+
+  return (
+    <section className="expenses" aria-labelledby="expenses-title">
+      <h2 id="expenses-title" className="expenses-title">
+        Your expenses
+      </h2>
+
+      <div className="undo-area" aria-live="polite">
+        {lastDeleted !== null && (
+          <p className="undo-bar">
+            <span>Deleted “{lastDeleted.envelope.name}”</span>
+            <button type="button" className="button-text" onClick={handleUndo}>
+              Undo
+            </button>
+          </p>
+        )}
+      </div>
+
+      {byDueMonth.length === 0 && openForm !== NEW_EXPENSE && (
+        <p className="expenses-empty">
+          List the one-off expenses you know are coming: a trip, new tyres, a birthday. Rough amounts and
+          months are fine; you can refine them later.
+        </p>
+      )}
+
+      {byDueMonth.length > 0 && (
+        <ul className="expense-list">
+          {byDueMonth.map((envelope) =>
+            openForm === envelope.id ? (
+              <li key={envelope.id} className="expense-row expense-row--editing">
+                <ExpenseForm
+                  initial={envelope}
+                  currentMonth={currentMonth}
+                  submitLabel="Save changes"
+                  onSave={(fields) => {
+                    onUpdate(envelope.id, fields);
+                    setOpenForm(null);
+                  }}
+                  onCancel={() => setOpenForm(null)}
+                />
+              </li>
+            ) : (
+              <ExpenseRow
+                key={envelope.id}
+                envelope={envelope}
+                onEdit={() => openFormFor(envelope.id)}
+                onDelete={() => handleDelete(envelope)}
+              />
+            ),
+          )}
+        </ul>
+      )}
+
+      {openForm === NEW_EXPENSE ? (
+        <div className="expense-new">
+          <ExpenseForm
+            currentMonth={currentMonth}
+            submitLabel="Add expense"
+            onSave={(fields) => {
+              onAdd(fields);
+              setOpenForm(null);
+            }}
+            onCancel={() => setOpenForm(null)}
+          />
+        </div>
+      ) : (
+        <button type="button" className="button-primary add-button" onClick={() => openFormFor(NEW_EXPENSE)}>
+          Add an expense
+        </button>
+      )}
+    </section>
+  );
+}
+
+interface ExpenseRowProps {
+  envelope: Envelope;
+  onEdit: () => void;
+  onDelete: () => void;
+}
+
+function ExpenseRow({ envelope, onEdit, onDelete }: ExpenseRowProps) {
+  const details = [
+    formatEuros(envelope.targetCents),
+    `due ${formatMonthShort(envelope.dueMonth)}`,
+    `${formatEuros(envelope.savedCents)} saved`,
+  ];
+  if (envelope.paidMonth !== undefined) details.push(`paid ${formatMonthShort(envelope.paidMonth)}`);
+
+  return (
+    <li className="expense-row">
+      <div className="expense-text">
+        <p className="expense-name">{envelope.name}</p>
+        <p className="expense-details">{details.join(' · ')}</p>
+      </div>
+      <div className="expense-actions">
+        <button type="button" className="button-text" onClick={onEdit} aria-label={`Edit ${envelope.name}`}>
+          Edit
+        </button>
+        <button
+          type="button"
+          className="button-text button-text--danger"
+          onClick={onDelete}
+          aria-label={`Delete ${envelope.name}`}
+        >
+          Delete
+        </button>
+      </div>
+    </li>
+  );
+}
