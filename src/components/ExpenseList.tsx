@@ -10,14 +10,25 @@ interface ExpenseListProps {
   onUpdate: (id: string, fields: EnvelopeFields) => void;
   onRemove: (id: string) => void;
   onRestore: (envelope: Envelope, index: number) => void;
+  /** Which form is open: an envelope id, NEW_EXPENSE, or null. One at a time. */
+  openForm: string | null;
+  onOpenFormChange: (formKey: string | null) => void;
 }
 
-const NEW_EXPENSE = 'new';
+/** The openForm value meaning "the add-an-expense form". */
+export const NEW_EXPENSE = 'new';
 
 /** Your known future expenses: add, edit in place, delete with undo. */
-export function ExpenseList({ envelopes, currentMonth, onAdd, onUpdate, onRemove, onRestore }: ExpenseListProps) {
-  // Which form is open: an envelope id, NEW_EXPENSE, or none. One at a time.
-  const [openForm, setOpenForm] = useState<string | null>(null);
+export function ExpenseList({
+  envelopes,
+  currentMonth,
+  onAdd,
+  onUpdate,
+  onRemove,
+  onRestore,
+  openForm,
+  onOpenFormChange,
+}: ExpenseListProps) {
   const [lastDeleted, setLastDeleted] = useState<{ envelope: Envelope; index: number } | null>(null);
 
   const byDueMonth = [...envelopes].sort(
@@ -25,7 +36,7 @@ export function ExpenseList({ envelopes, currentMonth, onAdd, onUpdate, onRemove
   );
 
   function openFormFor(formKey: string): void {
-    setOpenForm(formKey);
+    onOpenFormChange(formKey);
     setLastDeleted(null);
   }
 
@@ -34,7 +45,7 @@ export function ExpenseList({ envelopes, currentMonth, onAdd, onUpdate, onRemove
     const index = envelopes.findIndex((candidate) => candidate.id === envelope.id);
     onRemove(envelope.id);
     setLastDeleted({ envelope, index });
-    setOpenForm(null);
+    onOpenFormChange(null);
   }
 
   function handleUndo(): void {
@@ -78,9 +89,9 @@ export function ExpenseList({ envelopes, currentMonth, onAdd, onUpdate, onRemove
                   submitLabel="Save changes"
                   onSave={(fields) => {
                     onUpdate(envelope.id, fields);
-                    setOpenForm(null);
+                    onOpenFormChange(null);
                   }}
-                  onCancel={() => setOpenForm(null)}
+                  onCancel={() => onOpenFormChange(null)}
                 />
               </li>
             ) : (
@@ -102,9 +113,9 @@ export function ExpenseList({ envelopes, currentMonth, onAdd, onUpdate, onRemove
             submitLabel="Add expense"
             onSave={(fields) => {
               onAdd(fields);
-              setOpenForm(null);
+              onOpenFormChange(null);
             }}
-            onCancel={() => setOpenForm(null)}
+            onCancel={() => onOpenFormChange(null)}
           />
         </div>
       ) : (

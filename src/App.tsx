@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { ExpenseList } from './components/ExpenseList';
+import { EmptyStart, ExampleBanner } from './components/ExampleNotice';
+import { ExpenseList, NEW_EXPENSE } from './components/ExpenseList';
 import { LedgerColumns, LedgerRows } from './components/Ledger';
 import { ThisMonth } from './components/ThisMonth';
 import { monthOfDate } from './engine/months';
@@ -8,6 +9,7 @@ import { useEnvelopes } from './hooks/useEnvelopes';
 import { useIsWide } from './hooks/useIsWide';
 import { sampleEnvelopes } from './sampleEnvelopes';
 import { createLocalStore } from './storage/envelopeStore';
+import { loadHideExamples, saveHideExamples } from './storage/preferences';
 
 type LayoutChoice = 'auto' | 'rows' | 'columns';
 
@@ -32,8 +34,11 @@ export default function App() {
     restoreEnvelope,
   } = useEnvelopes(store);
 
-  // Until the first real expense exists, show examples — never saved.
-  const showingExample = !isLoading && savedEnvelopes.length === 0;
+  // Until the first real expense exists, show examples (never saved),
+  // unless you've chosen to hide them.
+  const [hideExamples, setHideExamples] = useState(loadHideExamples);
+  const listIsEmpty = !isLoading && savedEnvelopes.length === 0;
+  const showingExample = listIsEmpty && !hideExamples;
   const envelopes = useMemo(
     () => (showingExample ? sampleEnvelopes(currentMonth) : savedEnvelopes),
     [showingExample, savedEnvelopes, currentMonth],
@@ -45,13 +50,24 @@ export default function App() {
   const [layoutChoice, setLayoutChoice] = useState<LayoutChoice>('auto');
   const layout = layoutChoice === 'auto' ? (isWide ? 'columns' : 'rows') : layoutChoice;
 
+  // Which expense form is open. Kept here, not in the list, because the
+  // "Add your first expense" buttons at the top need to open it too.
+  const [openForm, setOpenForm] = useState<string | null>(null);
+
+  function changeHideExamples(hide: boolean): void {
+    setHideExamples(hide);
+    saveHideExamples(hide);
+  }
+
+  function openAddForm(): void {
+    // The form focuses its first field when it opens, which scrolls it into view.
+    setOpenForm(NEW_EXPENSE);
+  }
+
   return (
     <div className="page">
       <header className="masthead">
         <span className="wordmark">BudgetFlow</span>
-        {showingExample && (
-          <span className="sample-note">Example data · add your first expense below to replace it</span>
-        )}
       </header>
 
       {storageProblem && (
@@ -62,13 +78,24 @@ export default function App() {
 
       {!isLoading && (
         <main className="content">
-          <ThisMonth monthPlan={plan[0]} envelopes={envelopes} />
+          <div className="top-stack">
+            {showingExample && (
+              <ExampleBanner onAddFirst={openAddForm} onHide={() => changeHideExamples(true)} />
+            )}
+
+            {listIsEmpty && hideExamples ? (
+              <EmptyStart onAddFirst={openAddForm} onShowExamples={() => changeHideExamples(false)} />
+            ) : (
+              <ThisMonth monthPlan={plan[0]} envelopes={envelopes} isExample={showingExample} />
+            )}
+          </div>
 
           {plan.length > 0 && (
             <section className="ledger" aria-labelledby="ledger-title">
               <div className="ledger-heading">
                 <h2 id="ledger-title" className="ledger-title">
                   What's coming
+                  {showingExample && <span className="example-tag">Example</span>}
                 </h2>
                 <div className="layout-toggle" role="group" aria-label="Ledger layout">
                   {(['rows', 'columns'] as const).map((option) => (
@@ -98,6 +125,8 @@ export default function App() {
             onUpdate={updateEnvelope}
             onRemove={removeEnvelope}
             onRestore={restoreEnvelope}
+            openForm={openForm}
+            onOpenFormChange={setOpenForm}
           />
         </main>
       )}

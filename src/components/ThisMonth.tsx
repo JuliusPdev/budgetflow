@@ -6,10 +6,12 @@ interface ThisMonthProps {
   /** The plan's first month; missing when there is nothing to save for. */
   monthPlan: MonthPlan | undefined;
   envelopes: Envelope[];
+  /** Made-up example data: drawn dashed and tagged so it isn't mistaken for yours. */
+  isExample?: boolean;
 }
 
 /** The headline: how much to put aside this month, and what it is for. */
-export function ThisMonth({ monthPlan, envelopes }: ThisMonthProps) {
+export function ThisMonth({ monthPlan, envelopes, isExample = false }: ThisMonthProps) {
   if (monthPlan === undefined) {
     return (
       <section className="this-month">
@@ -27,9 +29,15 @@ export function ThisMonth({ monthPlan, envelopes }: ThisMonthProps) {
   });
 
   return (
-    <section className="this-month" aria-labelledby="this-month-title">
+    <section
+      className={isExample ? 'this-month this-month--example' : 'this-month'}
+      aria-labelledby="this-month-title"
+    >
       <div className="this-month-headline">
-        <p className="eyebrow">This month</p>
+        <p className="eyebrow">
+          This month
+          {isExample && <span className="example-tag">Example</span>}
+        </p>
         <h1 id="this-month-title" className="this-month-title">
           {formatMonthLong(monthPlan.month)}
         </h1>
