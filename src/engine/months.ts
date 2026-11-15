@@ -15,6 +15,11 @@ function fromIndex(index: number): Month {
   return `${year}-${String(monthNumber).padStart(2, '0')}`;
 }
 
+/** The calendar month a date falls in, e.g. 15 Nov 2026 → "2026-11". */
+export function monthOfDate(date: Date): Month {
+  return fromIndex(date.getFullYear() * 12 + date.getMonth());
+}
+
 /** The month `count` months after `month` ("2026-11" + 3 → "2027-02"). */
 export function addMonths(month: Month, count: number): Month {
   return fromIndex(toIndex(month) + count);
