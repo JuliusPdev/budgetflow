@@ -49,6 +49,32 @@ export async function fingerprint(data: BudgetData): Promise<string> {
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
+/** The newest saved-data version this app can read. */
+export const CURRENT_DATA_VERSION = 2;
+
+/** The version number written inside saved data, or 0 when there isn't a readable one. */
+export function savedVersionOf(text: string): number {
+  try {
+    const parsed: unknown = JSON.parse(text);
+    const version = typeof parsed === 'object' && parsed !== null ? (parsed as Record<string, unknown>).version : 0;
+    return typeof version === 'number' ? version : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * The text to lock and upload — but only after reading it back with the same
+ * checks the other device will use. Data that wouldn't be readable is never sent.
+ */
+function readableText(data: BudgetData): string {
+  const text = serializeBackup(data);
+  if (parseBackup(text) === null) {
+    throw new Error('Refused to upload data that could not be read back.');
+  }
+  return text;
+}
+
 export const MIN_PASSPHRASE_LENGTH = 12;
 
 /** Checks a new passphrase and its repeat. A message to show, or null when fine. */
@@ -68,7 +94,7 @@ export async function setUpVault(
   iterations = DEFAULT_ITERATIONS,
 ): Promise<{ vaultKey: VaultKey; point: SyncPoint } | 'exists'> {
   const vaultKey = await createVaultKey(passphrase, iterations);
-  const created = await remote.create(await sealText(vaultKey, serializeBackup(local)));
+  const created = await remote.create(await sealText(vaultKey, readableText(local)));
   if (created === 'exists') return 'exists';
   return { vaultKey, point: { revision: created.revision, fingerprint: await fingerprint(local) } };
 }
@@ -85,7 +111,11 @@ export type StartDecision =
   | { kind: 'in-step'; point: SyncPoint }
   | { kind: 'use-remote'; data: BudgetData; point: SyncPoint }
   | { kind: 'push-local'; revision: number }
-  | { kind: 'choose'; remoteData: BudgetData; record: RemoteRecord };
+  | { kind: 'choose'; remoteData: BudgetData; record: RemoteRecord }
+  /** The key fits, but what's inside isn't valid BudgetFlow data. */
+  | { kind: 'damaged'; record: RemoteRecord }
+  /** Saved by a newer BudgetFlow than this one: reload, never replace. */
+  | { kind: 'newer-app' };
 
 /**
  * What to do, comparing this device's budget and the server's row against the
@@ -108,7 +138,9 @@ export async function decideStart(
   // The key no longer fits (e.g. the passphrase was changed elsewhere).
   if (text === null) return { kind: 'needs-unlock' };
   const remoteData = parseBackup(text);
-  if (remoteData === null) throw new Error('The synced data could not be read.');
+  if (remoteData === null) {
+    return savedVersionOf(text) > CURRENT_DATA_VERSION ? { kind: 'newer-app' } : { kind: 'damaged', record };
+  }
 
   const [localPrint, remotePrint] = await Promise.all([fingerprint(local), fingerprint(remoteData)]);
   const remotePoint: SyncPoint = { revision: record.revision, fingerprint: remotePrint };
@@ -135,7 +167,7 @@ export async function pushLocal(
   local: BudgetData,
   knownRevision: number,
 ): Promise<SyncPoint | 'conflict'> {
-  const updated = await remote.update(await sealText(vaultKey, serializeBackup(local)), knownRevision);
+  const updated = await remote.update(await sealText(vaultKey, readableText(local)), knownRevision);
   if (updated === 'conflict') return 'conflict';
   return { revision: updated.revision, fingerprint: await fingerprint(local) };
 }

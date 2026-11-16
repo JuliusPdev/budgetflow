@@ -26,7 +26,11 @@ export type SyncStatus =
   | { kind: 'saving' }
   | { kind: 'synced'; at: Date }
   | { kind: 'unavailable' }
-  | { kind: 'problem' };
+  | { kind: 'problem' }
+  /** The synced copy unlocks but can't be read; this device may replace it. */
+  | { kind: 'damaged'; deviceCount: number }
+  /** The synced copy was saved by a newer BudgetFlow: reload this page. */
+  | { kind: 'outdated' };
 
 interface UseSyncOptions {
   account: AccountState;
@@ -58,6 +62,8 @@ export function useSync({ account, data, isLoading, replaceAll }: UseSyncOptions
   // Null while sync is paused (needs setup, unlock, or a choice): nothing is pushed.
   const pointRef = useRef<SyncPoint | null>(null);
   const choiceRef = useRef<{ remoteData: BudgetData; record: RemoteRecord } | null>(null);
+  // The damaged synced copy, kept so "Replace synced copy" knows which revision to overwrite.
+  const damagedRef = useRef<RemoteRecord | null>(null);
   // Sync steps run one at a time, in order, like a single checkout lane.
   const queueRef = useRef<Promise<void>>(Promise.resolve());
 
@@ -69,6 +75,8 @@ export function useSync({ account, data, isLoading, replaceAll }: UseSyncOptions
 
   function enqueue(step: () => Promise<void>): Promise<void> {
     const next = queueRef.current.then(step).catch((error: unknown) => {
+      // The real reason, for whoever opens the browser's console.
+      console.error('BudgetFlow sync step failed:', error);
       setStatus(error instanceof SyncUnavailableError ? { kind: 'unavailable' } : { kind: 'problem' });
     });
     queueRef.current = next;
@@ -118,6 +126,16 @@ export function useSync({ account, data, isLoading, replaceAll }: UseSyncOptions
           deviceCount: dataRef.current.envelopes.length,
           syncedCount: decision.remoteData.envelopes.length,
         });
+        return;
+      case 'damaged':
+        pointRef.current = null;
+        damagedRef.current = decision.record;
+        console.error('BudgetFlow: the synced copy unlocks but its contents are not valid BudgetFlow data.');
+        setStatus({ kind: 'damaged', deviceCount: dataRef.current.envelopes.length });
+        return;
+      case 'newer-app':
+        pointRef.current = null;
+        setStatus({ kind: 'outdated' });
         return;
     }
   }
@@ -213,6 +231,7 @@ export function useSync({ account, data, isLoading, replaceAll }: UseSyncOptions
       agree(result.point);
       return null;
     } catch (error) {
+      console.error('BudgetFlow sync failed:', error);
       return messageFor(error);
     }
   }
@@ -234,6 +253,7 @@ export function useSync({ account, data, isLoading, replaceAll }: UseSyncOptions
       await apply(await decideStart(record, vaultKey, dataRef.current, loadSyncPoint(id)));
       return null;
     } catch (error) {
+      console.error('BudgetFlow sync failed:', error);
       return messageFor(error);
     }
   }
@@ -252,6 +272,18 @@ export function useSync({ account, data, isLoading, replaceAll }: UseSyncOptions
         pointRef.current = { revision: choice.record.revision, fingerprint: '' };
         await pushNow();
       }
+    });
+  }
+
+  /** Overwrites a damaged synced copy with this device's budget. */
+  function replaceDamaged(): Promise<void> {
+    const record = damagedRef.current;
+    damagedRef.current = null;
+    if (record === null || dataRef.current.envelopes.length === 0) return Promise.resolve();
+    return enqueue(async () => {
+      // The stale fingerprint guarantees the push goes ahead.
+      pointRef.current = { revision: record.revision, fingerprint: '' };
+      await pushNow();
     });
   }
 
@@ -274,6 +306,7 @@ export function useSync({ account, data, isLoading, replaceAll }: UseSyncOptions
     turnOn,
     unlock,
     choose,
+    replaceDamaged,
     forgetThisDevice,
     retry,
     unavailableMessage: UNAVAILABLE_MESSAGE,

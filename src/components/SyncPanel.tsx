@@ -15,6 +15,7 @@ interface SyncPanelProps {
     turnOn: (passphrase: string) => Promise<string | null>;
     unlock: (passphrase: string) => Promise<string | null>;
     choose: (keep: 'synced' | 'this-device') => Promise<void>;
+    replaceDamaged: () => Promise<void>;
     retry: () => void;
     unavailableMessage: string;
     problemMessage: string;
@@ -102,6 +103,37 @@ export function SyncPanel({ account, linkError, onSendLink, onSignOut, sync }: S
               syncedCount={sync.status.syncedCount}
               onChoose={(keep) => void sync.choose(keep)}
             />
+          )}
+
+          {sync.status.kind === 'damaged' && (
+            <div className="sync-warning" role="alert">
+              {sync.status.deviceCount > 0 ? (
+                <>
+                  <p>
+                    Your synced copy unlocks, but what's inside is damaged. Replace it with this device's{' '}
+                    {sync.status.deviceCount === 1 ? '1 expense' : `${sync.status.deviceCount} expenses`}? Your
+                    other devices will then get this version.
+                  </p>
+                  <button type="button" className="button-secondary" onClick={() => void sync.replaceDamaged()}>
+                    Replace synced copy
+                  </button>
+                </>
+              ) : (
+                <p>
+                  Your synced copy unlocks, but what's inside is damaged, and this device has no expenses to
+                  replace it with. Open BudgetFlow on the device that has your expenses and fix it there.
+                </p>
+              )}
+            </div>
+          )}
+
+          {sync.status.kind === 'outdated' && (
+            <div className="sync-warning" role="alert">
+              <p>Your synced expenses were saved by a newer version of BudgetFlow. Reload this page to update.</p>
+              <button type="button" className="button-secondary" onClick={() => window.location.reload()}>
+                Reload
+              </button>
+            </div>
           )}
 
           <p className="sync-status" aria-live="polite">

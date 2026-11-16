@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createVaultKey, sealText } from '../crypto/vault';
+import { createVaultKey, sealText, type VaultKey } from '../crypto/vault';
 import type { BudgetData, Envelope } from '../engine/types';
 import { serializeBackup } from '../storage/envelopeStore';
 import {
@@ -151,5 +151,45 @@ describe('pushLocal', () => {
     expect(saved).toMatchObject({ revision: 2 });
     // A device still thinking the server is at revision 1 must not overwrite revision 2.
     expect(await pushLocal(server, setUp.vaultKey, budget(tyres), 1)).toBe('conflict');
+  });
+});
+
+describe('unreadable synced copies', () => {
+  async function serverHolding(text: string): Promise<{ vaultKey: VaultKey; record: RemoteRecord }> {
+    const vaultKey = await createVaultKey(PASSPHRASE, FAST);
+    return { vaultKey, record: { box: await sealText(vaultKey, text), revision: 4 } };
+  }
+
+  it('calls a known-version copy with missing pieces damaged', async () => {
+    // What a half-converted app could upload: the version number and nothing else.
+    const { vaultKey, record } = await serverHolding('{"version":2}');
+    expect(await decideStart(record, vaultKey, budget(trip), null)).toEqual({ kind: 'damaged', record });
+  });
+
+  it('never calls a copy from a newer BudgetFlow damaged', async () => {
+    const { vaultKey, record } = await serverHolding('{"version":3,"somethingNew":[]}');
+    expect(await decideStart(record, vaultKey, budget(trip), null)).toEqual({ kind: 'newer-app' });
+  });
+
+  it('can replace a damaged copy with this device budget', async () => {
+    const server = fakeServer();
+    const { vaultKey, record } = await serverHolding('{"version":2}');
+    server.record = record;
+    const repaired = await pushLocal(server, vaultKey, budget(trip, tyres), record.revision);
+    expect(repaired).toMatchObject({ revision: 5 });
+  });
+});
+
+describe('upload safety check', () => {
+  it('refuses to upload data that would not read back', async () => {
+    const server = fakeServer();
+    const setUp = await setUpVault(server, PASSPHRASE, budget(trip), FAST);
+    if (setUp === 'exists') throw new Error('expected a fresh setup');
+    const before = server.record;
+
+    // A plain list where a budget belongs: exactly the half-converted mistake.
+    const notABudget = [trip] as unknown as BudgetData;
+    await expect(pushLocal(server, setUp.vaultKey, notABudget, 1)).rejects.toThrow(/could not be read back/);
+    expect(server.record).toBe(before);
   });
 });
