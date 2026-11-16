@@ -1,6 +1,6 @@
 import type { MonthPlan } from '../engine/plan';
 import type { Cents, Envelope } from '../engine/types';
-import { formatEuros, formatMonthShort } from '../utils/format';
+import { formatDayShort, formatEuros, formatMonthShort } from '../utils/format';
 
 // Two arrangements of the same plan. They only lay numbers out differently —
 // every number comes straight from the engine, so switching can't change one.
@@ -15,6 +15,16 @@ function nameLookup(envelopes: Envelope[]): (id: string) => string {
   return (id) => names.get(id) ?? id;
 }
 
+/** A bill's name with its real date when known: "Presents · 5 Dec". */
+function billLookup(envelopes: Envelope[]): (id: string) => string {
+  const byId = new Map(envelopes.map((envelope) => [envelope.id, envelope]));
+  return (id) => {
+    const envelope = byId.get(id);
+    if (envelope === undefined) return id;
+    return envelope.dueDate === undefined ? envelope.name : `${envelope.name} · ${formatDayShort(envelope.dueDate)}`;
+  };
+}
+
 function sumOf(amounts: Record<string, Cents>): Cents {
   return Object.values(amounts).reduce((total, amount) => total + amount, 0);
 }
@@ -22,6 +32,7 @@ function sumOf(amounts: Record<string, Cents>): Cents {
 /** Phone layout: one block per month, read top to bottom like a statement. */
 export function LedgerRows({ plan, envelopes }: LedgerProps) {
   const nameOf = nameLookup(envelopes);
+  const billOf = billLookup(envelopes);
 
   return (
     <ol className="ledger-rows">
@@ -49,7 +60,7 @@ export function LedgerRows({ plan, envelopes }: LedgerProps) {
               <ul className="ledger-bills" aria-label="Going out">
                 {bills.map(([id, cents]) => (
                   <li key={id}>
-                    <span>Going out · {nameOf(id)}</span>
+                    <span>Going out · {billOf(id)}</span>
                     <span className="figures">−{formatEuros(cents)}</span>
                   </li>
                 ))}
@@ -64,7 +75,7 @@ export function LedgerRows({ plan, envelopes }: LedgerProps) {
 
 /** Computer layout: one row per goal, months running left to right. */
 export function LedgerColumns({ plan, envelopes }: LedgerProps) {
-  const nameOf = nameLookup(envelopes);
+  const billOf = billLookup(envelopes);
   const goals = [...envelopes]
     .filter((envelope) => plan.some((month) => month.byEnvelope[envelope.id] !== undefined))
     .sort((a, b) => a.dueMonth.localeCompare(b.dueMonth));
@@ -131,7 +142,7 @@ export function LedgerColumns({ plan, envelopes }: LedgerProps) {
                   ) : (
                     <>
                       −{formatEuros(sumOf(monthPlan.billsOut))}
-                      <span className="bill-names">{bills.map(nameOf).join(', ')}</span>
+                      <span className="bill-names">{bills.map(billOf).join(', ')}</span>
                     </>
                   )}
                 </td>

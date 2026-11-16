@@ -1,5 +1,7 @@
 import { useId, useRef, useState, type FormEvent } from 'react';
+import { DEFAULT_PAYDAY, fundingMonth } from '../engine/timing';
 import type { EnvelopeFields, Month } from '../engine/types';
+import { formatMonthLong } from '../utils/format';
 import {
   DRAFT_FIELD_ORDER,
   draftFrom,
@@ -13,13 +15,15 @@ interface ExpenseFormProps {
   /** The expense being edited; leave out to add a new one. */
   initial?: EnvelopeFields;
   currentMonth: Month;
+  /** Day of the month pay arrives, to show which paycheck covers the expense. */
+  payday: number;
   submitLabel: string;
   onSave: (fields: EnvelopeFields) => void;
   onCancel: () => void;
 }
 
 /** Add or edit one expense. Nothing is saved until the draft passes its checks. */
-export function ExpenseForm({ initial, currentMonth, submitLabel, onSave, onCancel }: ExpenseFormProps) {
+export function ExpenseForm({ initial, currentMonth, payday, submitLabel, onSave, onCancel }: ExpenseFormProps) {
   const [draft, setDraft] = useState<Draft>(() => draftFrom(initial, currentMonth));
   const [errors, setErrors] = useState<DraftErrors>({});
   const formId = useId();
@@ -60,6 +64,17 @@ export function ExpenseForm({ initial, currentMonth, submitLabel, onSave, onCanc
     };
   }
 
+  /** Which paycheck will pay for this, once the timing is filled in. */
+  function coveringPaycheck(): string | null {
+    const isMonth = draft.dueMode === 'month' && /^\d{4}-\d{2}$/.test(draft.dueMonth);
+    const isDay = draft.dueMode === 'date' && /^\d{4}-\d{2}-\d{2}$/.test(draft.dueDate);
+    if (!isMonth && !isDay) return null;
+    const timing = isDay
+      ? { dueMonth: draft.dueDate.slice(0, 7), dueDate: draft.dueDate }
+      : { dueMonth: draft.dueMonth };
+    return formatMonthLong(fundingMonth({ id: '', name: '', targetCents: 0, savedCents: 0, ...timing }, payday));
+  }
+
   function errorFor(field: DraftField) {
     const message = errors[field];
     return message === undefined ? null : (
@@ -98,17 +113,51 @@ export function ExpenseForm({ initial, currentMonth, submitLabel, onSave, onCanc
         {errorFor('amount')}
       </div>
 
-      <div className="field">
-        <label htmlFor={fieldId('dueMonth')}>Due month</label>
-        <input
-          {...inputProps('dueMonth')}
-          type="month"
-          placeholder="2027-01"
-          value={draft.dueMonth}
-          onChange={(event) => setField('dueMonth', event.target.value)}
-        />
-        {errorFor('dueMonth')}
-      </div>
+      <fieldset className="field field--wide due-field">
+        <legend>When is it due?</legend>
+        <div className="choice-toggle">
+          {(['month', 'date'] as const).map((mode) => (
+            <label key={mode} className="choice">
+              <input
+                type="radio"
+                name={fieldId('dueMode')}
+                checked={draft.dueMode === mode}
+                onChange={() => setField('dueMode', mode)}
+              />
+              <span>{mode === 'month' ? 'Month' : 'Exact date'}</span>
+            </label>
+          ))}
+        </div>
+        {draft.dueMode === 'month' ? (
+          <>
+            <input
+              {...inputProps('dueMonth')}
+              aria-label="Due month"
+              type="month"
+              placeholder="2027-01"
+              value={draft.dueMonth}
+              onChange={(event) => setField('dueMonth', event.target.value)}
+            />
+            <p className="field-hint">Counts as needed when the month starts. Not sure of the week? Pick its first day.</p>
+            {errorFor('dueMonth')}
+          </>
+        ) : (
+          <>
+            <input
+              {...inputProps('dueDate')}
+              aria-label="Due date"
+              type="date"
+              placeholder="2027-01-28"
+              value={draft.dueDate}
+              onChange={(event) => setField('dueDate', event.target.value)}
+            />
+            {errorFor('dueDate')}
+          </>
+        )}
+        {payday !== DEFAULT_PAYDAY && coveringPaycheck() !== null && (
+          <p className="field-hint due-paycheck">Paid from your {coveringPaycheck()} paycheck</p>
+        )}
+      </fieldset>
 
       <div className="field">
         <label htmlFor={fieldId('saved')}>Already saved (€)</label>

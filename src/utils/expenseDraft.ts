@@ -7,7 +7,10 @@ import type { Cents, EnvelopeFields, Month } from '../engine/types';
 export interface Draft {
   name: string;
   amount: string;
+  /** How precise the due timing is: just a month, or an exact day. */
+  dueMode: 'month' | 'date';
   dueMonth: string;
+  dueDate: string;
   saved: string;
   isPaid: boolean;
   paidMonth: string;
@@ -17,10 +20,11 @@ export type DraftField = keyof Draft;
 export type DraftErrors = Partial<Record<DraftField, string>>;
 
 /** Fields in screen order, so the first problem can receive focus. */
-export const DRAFT_FIELD_ORDER: DraftField[] = ['name', 'amount', 'dueMonth', 'saved', 'isPaid', 'paidMonth'];
+export const DRAFT_FIELD_ORDER: DraftField[] = ['name', 'amount', 'dueMonth', 'dueDate', 'saved', 'isPaid', 'paidMonth'];
 
 const AMOUNT_PATTERN = /^\d+([.,]\d{1,2})?$/;
 const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
+const DAY_PATTERN = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
 
 /**
  * "899,50" or "899.50" or "€ 900" → cents. Uses whole-number math only, so no
@@ -41,12 +45,23 @@ export function centsToInputText(cents: Cents): string {
 /** A fresh draft, or one filled in from an existing expense. */
 export function draftFrom(existing: EnvelopeFields | undefined, currentMonth: Month): Draft {
   if (existing === undefined) {
-    return { name: '', amount: '', dueMonth: '', saved: '', isPaid: false, paidMonth: currentMonth };
+    return {
+      name: '',
+      amount: '',
+      dueMode: 'month',
+      dueMonth: '',
+      dueDate: '',
+      saved: '',
+      isPaid: false,
+      paidMonth: currentMonth,
+    };
   }
   return {
     name: existing.name,
     amount: centsToInputText(existing.targetCents),
+    dueMode: existing.dueDate === undefined ? 'month' : 'date',
     dueMonth: existing.dueMonth,
+    dueDate: existing.dueDate ?? '',
     saved: existing.savedCents === 0 ? '' : centsToInputText(existing.savedCents),
     isPaid: existing.paidMonth !== undefined,
     paidMonth: existing.paidMonth ?? currentMonth,
@@ -67,8 +82,11 @@ export function validateDraft(draft: Draft): DraftResult {
     errors.amount = 'Enter an amount like 900 or 899.50';
   }
 
-  if (!MONTH_PATTERN.test(draft.dueMonth)) {
+  if (draft.dueMode === 'month' && !MONTH_PATTERN.test(draft.dueMonth)) {
     errors.dueMonth = "Pick the month it's due, like 2027-01";
+  }
+  if (draft.dueMode === 'date' && !DAY_PATTERN.test(draft.dueDate)) {
+    errors.dueDate = 'Pick the day it\'s due, like 2027-01-28';
   }
 
   const savedCents = draft.saved.trim() === '' ? 0 : parseEurosToCents(draft.saved);
@@ -90,7 +108,9 @@ export function validateDraft(draft: Draft): DraftResult {
     fields: {
       name,
       targetCents,
-      dueMonth: draft.dueMonth,
+      // An exact date decides the month; "Month" mode clears any earlier date.
+      dueMonth: draft.dueMode === 'date' ? draft.dueDate.slice(0, 7) : draft.dueMonth,
+      dueDate: draft.dueMode === 'date' ? draft.dueDate : undefined,
       savedCents,
       // Always present, so unticking "Already paid" clears an earlier paid month.
       paidMonth: draft.isPaid ? draft.paidMonth : undefined,

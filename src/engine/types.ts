@@ -8,6 +8,9 @@
  */
 export type Month = string;
 
+/** A calendar day written as "YYYY-MM-DD". */
+export type Day = string;
+
 /**
  * Money is always stored in whole cents (€12.50 → 1250), never as decimals,
  * because computers add decimals inexactly (0.1 + 0.2 ≠ 0.3).
@@ -26,10 +29,12 @@ export interface Envelope {
   /** The full amount you'll need to pay. */
   targetCents: Cents;
   /**
-   * The latest month the money is needed (for a trip: the trip month).
-   * This month's own set-aside still counts toward it.
+   * The calendar month the money is needed in. On its own it means "ready when
+   * this month starts"; with `dueDate` it's simply that date's month.
    */
   dueMonth: Month;
+  /** The exact day, when known. A week is entered as its first day. */
+  dueDate?: Day;
   /**
    * How much you have put toward this expense so far. Paying the bill does
    * not change this — it only moves money out of the savings account.
@@ -45,9 +50,6 @@ export interface Envelope {
 
 /** An envelope's own details, without its id — what a form edits. */
 export type EnvelopeFields = Omit<Envelope, 'id'>;
-
-/** A calendar day written as "YYYY-MM-DD". */
-export type Day = string;
 
 /**
  * Money moved into savings, and exactly how it was split across envelopes —
@@ -76,10 +78,17 @@ export interface WithdrawalEntry {
 
 export type LogEntry = SetAsideEntry | WithdrawalEntry;
 
-/** Everything about your budget: the envelopes, and the log of what you actually did. */
+/** Your choices that shape the calculation, shared by all your devices. */
+export interface BudgetSettings {
+  /** Day of the month your pay usually arrives (1–31). 1 means plain calendar months. */
+  payday: number;
+}
+
+/** Everything about your budget: the envelopes, the log of what you did, and your settings. */
 export interface BudgetData {
   envelopes: Envelope[];
   log: LogEntry[];
+  settings: BudgetSettings;
 }
 
 /**
@@ -87,7 +96,8 @@ export interface BudgetData {
  * written in an older shape and convert it instead of crashing:
  *   1 — envelopes only (read as an empty log)
  *   2 — envelopes and the savings log
+ *   3 — plus exact due dates and settings (payday)
  */
 export interface SavedData extends BudgetData {
-  version: 2;
+  version: 3;
 }

@@ -8,13 +8,16 @@ import { ThisMonth } from './components/ThisMonth';
 import { dayOfDate, monthOfDate } from './engine/months';
 import { planSetAside } from './engine/plan';
 import { envelopesAtMonthStart } from './engine/savingsLog';
+import { DEFAULT_PAYDAY, paycheckMonthOf, paycheckRange, planningView } from './engine/timing';
 import { MonthProgress } from './components/MonthProgress';
+import { PaydaySettings } from './components/PaydaySettings';
 import { useAccount } from './hooks/useAccount';
 import { useEnvelopes } from './hooks/useEnvelopes';
 import { useIsWide } from './hooks/useIsWide';
 import { useSync } from './hooks/useSync';
 import { sampleEnvelopes } from './sampleEnvelopes';
 import { createLocalStore } from './storage/envelopeStore';
+import { formatDayShort, ordinal } from './utils/format';
 import { loadHideExamples, saveHideExamples } from './storage/preferences';
 
 type LayoutChoice = 'auto' | 'rows' | 'columns';
@@ -29,7 +32,8 @@ const store = createLocalStore({
 });
 
 export default function App() {
-  const currentMonth = monthOfDate(new Date());
+  // The real month (for things like "paid in"), and the paycheck you're living on.
+  const calendarMonth = monthOfDate(new Date());
   const {
     envelopes: savedEnvelopes,
     isLoading,
@@ -41,9 +45,15 @@ export default function App() {
     log,
     logSetAside,
     deleteLogEntry,
+    settings,
+    setPayday,
     data,
     replaceAll,
   } = useEnvelopes(store);
+  const currentPaycheck = paycheckMonthOf(dayOfDate(new Date()), settings.payday);
+  const hasPayday = settings.payday !== DEFAULT_PAYDAY;
+  const range = paycheckRange(currentPaycheck, settings.payday);
+  const paycheckLabel = hasPayday ? `${formatDayShort(range.from)} – ${formatDayShort(range.to)}` : undefined;
   const { account, linkError, sendLink, signOut } = useAccount();
   const sync = useSync({ account, data, isLoading, replaceAll });
 
@@ -60,15 +70,19 @@ export default function App() {
   const listIsEmpty = !isLoading && savedEnvelopes.length === 0;
   const showingExample = listIsEmpty && !hideExamples;
   const envelopes = useMemo(
-    () => (showingExample ? sampleEnvelopes(currentMonth) : savedEnvelopes),
-    [showingExample, savedEnvelopes, currentMonth],
+    () => (showingExample ? sampleEnvelopes(calendarMonth) : savedEnvelopes),
+    [showingExample, savedEnvelopes, calendarMonth],
   );
   // Examples have no log. Planning from the month's start keeps this month's
   // amount fixed while you log set-asides against it.
   const activeLog = useMemo(() => (showingExample ? [] : log), [showingExample, log]);
   const plan = useMemo(
-    () => planSetAside(envelopesAtMonthStart(envelopes, activeLog, currentMonth), currentMonth),
-    [envelopes, activeLog, currentMonth],
+    () =>
+      planSetAside(
+        envelopesAtMonthStart(planningView(envelopes, settings.payday), activeLog, currentPaycheck),
+        currentPaycheck,
+      ),
+    [envelopes, activeLog, currentPaycheck, settings.payday],
   );
 
   // Columns suit a wide screen, rows a phone — unless the user picks one.
@@ -112,7 +126,12 @@ export default function App() {
             {listIsEmpty && hideExamples ? (
               <EmptyStart onAddFirst={openAddForm} onShowExamples={() => changeHideExamples(false)} />
             ) : (
-              <ThisMonth monthPlan={plan[0]} envelopes={envelopes} isExample={showingExample}>
+              <ThisMonth
+                monthPlan={plan[0]}
+                envelopes={envelopes}
+                isExample={showingExample}
+                paycheckLabel={paycheckLabel}
+              >
                 {!showingExample && plan[0] !== undefined && (
                   <MonthProgress
                     monthPlan={plan[0]}
@@ -147,6 +166,11 @@ export default function App() {
                   ))}
                 </div>
               </div>
+              {hasPayday && (
+                <p className="field-hint ledger-note">
+                  Each month here is a paycheck, paid around the {ordinal(settings.payday)}.
+                </p>
+              )}
               {layout === 'columns' ? (
                 <LedgerColumns plan={plan} envelopes={envelopes} />
               ) : (
@@ -157,7 +181,8 @@ export default function App() {
 
           <ExpenseList
             envelopes={savedEnvelopes}
-            currentMonth={currentMonth}
+            currentMonth={calendarMonth}
+            payday={settings.payday}
             onAdd={addEnvelope}
             onUpdate={updateEnvelope}
             onRemove={removeEnvelope}
@@ -173,6 +198,8 @@ export default function App() {
             onSignOut={signOutOfThisDevice}
             sync={sync}
           />
+
+          <PaydaySettings payday={settings.payday} onChange={setPayday} />
 
           <Backup data={data} onRestore={replaceAll} isSyncing={isSyncing} />
         </main>

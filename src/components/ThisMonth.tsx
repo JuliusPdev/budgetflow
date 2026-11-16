@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { loanCents, type MonthPlan } from '../engine/plan';
 import type { Cents, Envelope } from '../engine/types';
-import { formatEuros, formatMonthLong, formatMonthShort } from '../utils/format';
+import { formatDue, formatEuros, formatMonthLong, formatMonthShort } from '../utils/format';
 
 interface ThisMonthProps {
   /** The plan's first month; missing when there is nothing to save for. */
@@ -9,12 +9,14 @@ interface ThisMonthProps {
   envelopes: Envelope[];
   /** Made-up example data: drawn dashed and tagged so it isn't mistaken for yours. */
   isExample?: boolean;
+  /** With a payday set: the stretch this paycheck covers, e.g. "21 Nov – 20 Dec". */
+  paycheckLabel?: string;
   /** Extra content under the headline amount, e.g. this month's progress. */
   children?: ReactNode;
 }
 
 /** The headline: how much to put aside this month, and what it is for. */
-export function ThisMonth({ monthPlan, envelopes, isExample = false, children }: ThisMonthProps) {
+export function ThisMonth({ monthPlan, envelopes, isExample = false, paycheckLabel, children }: ThisMonthProps) {
   if (monthPlan === undefined) {
     return (
       <section className="this-month">
@@ -38,7 +40,7 @@ export function ThisMonth({ monthPlan, envelopes, isExample = false, children }:
     >
       <div className="this-month-headline">
         <p className="eyebrow">
-          This month
+          {paycheckLabel === undefined ? 'This month' : `This paycheck · ${paycheckLabel}`}
           {isExample && <span className="example-tag">Example</span>}
         </p>
         <h1 id="this-month-title" className="this-month-title">
@@ -75,8 +77,8 @@ function GoalLine({ envelope, shareCents }: GoalLineProps) {
   // A paid-early goal tells the repayment story instead of the saving story.
   const detail =
     envelope.paidMonth !== undefined && loan > 0
-      ? `Paid ${formatMonthShort(envelope.paidMonth)} · repaying ${formatEuros(loan)} by ${formatMonthShort(envelope.dueMonth)}`
-      : `${formatEuros(envelope.savedCents)} of ${formatEuros(envelope.targetCents)} · due ${formatMonthShort(envelope.dueMonth)}`;
+      ? `Paid ${formatMonthShort(envelope.paidMonth)} · repaying ${formatEuros(loan)} by ${formatDue(envelope)}`
+      : `${formatEuros(envelope.savedCents)} of ${formatEuros(envelope.targetCents)} · due ${formatDue(envelope)}`;
 
   return (
     <li className={loan > 0 ? 'goal goal--repaying' : 'goal'}>

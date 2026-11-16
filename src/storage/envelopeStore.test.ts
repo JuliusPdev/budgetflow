@@ -29,7 +29,7 @@ const trip: Envelope = {
   savedCents: 10_000,
 };
 
-const EMPTY: BudgetData = { envelopes: [], log: [] };
+const EMPTY: BudgetData = { envelopes: [], log: [], settings: { payday: 1 } };
 
 const setAside: LogEntry = {
   id: 'made-up-entry',
@@ -49,7 +49,7 @@ describe('envelope store', () => {
     const store = createLocalStore(fakeDrawer());
     const paidTrip = { ...trip, paidMonth: '2027-01' };
 
-    const data: BudgetData = { envelopes: [trip, paidTrip], log: [setAside] };
+    const data: BudgetData = { envelopes: [trip, paidTrip], log: [setAside], settings: { payday: 21 } };
     await store.save(data);
 
     expect(await store.load()).toEqual(data);
@@ -74,13 +74,13 @@ describe('envelope store', () => {
 
   it('reads data saved before the savings log existed (version 1) as an empty log', async () => {
     const drawer = fakeDrawer({ [STORAGE_KEY]: JSON.stringify({ version: 1, envelopes: [trip] }) });
-    expect(await createLocalStore(drawer).load()).toEqual({ envelopes: [trip], log: [] });
+    expect(await createLocalStore(drawer).load()).toEqual({ envelopes: [trip], log: [], settings: { payday: 1 } });
   });
 
   it('always saves the newest version', async () => {
     const drawer = fakeDrawer();
-    await createLocalStore(drawer).save({ envelopes: [trip], log: [] });
-    expect(JSON.parse(drawer.contents.get(STORAGE_KEY) ?? '{}').version).toBe(2);
+    await createLocalStore(drawer).save({ envelopes: [trip], log: [], settings: { payday: 1 } });
+    expect(JSON.parse(drawer.contents.get(STORAGE_KEY) ?? '{}').version).toBe(3);
   });
 
   it('rejects a log entry with a broken split', async () => {
@@ -100,13 +100,39 @@ describe('envelope store', () => {
 describe('backup files', () => {
   it('reads back exactly what was written', () => {
     const paidTrip = { ...trip, id: 'paid', paidMonth: '2027-01' };
-    const data: BudgetData = { envelopes: [trip, paidTrip], log: [setAside] };
+    const data: BudgetData = { envelopes: [trip, paidTrip], log: [setAside], settings: { payday: 21 } };
     expect(parseBackup(serializeBackup(data))).toEqual(data);
   });
 
   it('refuses files that are not BudgetFlow backups', () => {
     for (const text of ['', 'hello', '{"version":2,"envelopes":[]}', '{"envelopes":[{"id":"x"}],"version":1}']) {
       expect(parseBackup(text)).toBeNull();
+    }
+  });
+});
+
+describe('version 3: exact dates and settings', () => {
+  it('reads version 2 data with payday on the 1st, keeping its calculations unchanged', async () => {
+    const drawer = fakeDrawer({ [STORAGE_KEY]: JSON.stringify({ version: 2, envelopes: [trip], log: [] }) });
+    expect((await createLocalStore(drawer).load()).settings).toEqual({ payday: 1 });
+  });
+
+  it('keeps an exact due date and the payday', async () => {
+    const store = createLocalStore(fakeDrawer());
+    const dated = { ...trip, dueDate: '2027-03-14' };
+    await store.save({ envelopes: [dated], log: [], settings: { payday: 21 } });
+    expect(await store.load()).toEqual({ envelopes: [dated], log: [], settings: { payday: 21 } });
+  });
+
+  it('refuses a date outside its due month, or an impossible payday', async () => {
+    const wrongMonth = { ...trip, dueDate: '2027-04-14' };
+    const bad = [
+      { version: 3, envelopes: [wrongMonth], log: [], settings: { payday: 21 } },
+      { version: 3, envelopes: [trip], log: [], settings: { payday: 32 } },
+    ];
+    for (const data of bad) {
+      const drawer = fakeDrawer({ [STORAGE_KEY]: JSON.stringify(data) });
+      expect(await createLocalStore(drawer).load()).toEqual(EMPTY);
     }
   });
 });

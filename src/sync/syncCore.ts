@@ -50,7 +50,7 @@ export async function fingerprint(data: BudgetData): Promise<string> {
 }
 
 /** The newest saved-data version this app can read. */
-export const CURRENT_DATA_VERSION = 2;
+export const CURRENT_DATA_VERSION = 3;
 
 /** The version number written inside saved data, or 0 when there isn't a readable one. */
 export function savedVersionOf(text: string): number {

@@ -919,6 +919,81 @@ ol {
   font-size: 1.125rem;
 }
 
+/* Due timing, settings */
+
+.due-field {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.due-field legend {
+  margin-bottom: var(--space-1);
+  padding: 0;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.choice-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-bottom: var(--space-1);
+}
+
+.choice {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 44px;
+  font-size: 0.9375rem;
+  cursor: pointer;
+}
+
+.choice input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--green);
+}
+
+.field input[type='date'],
+.field select {
+  min-height: 44px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 1rem;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.due-field input[type='month'],
+.due-field input[type='date'] {
+  max-width: 16rem;
+}
+
+.due-paycheck {
+  color: var(--green);
+  font-weight: 500;
+}
+
+.settings {
+  display: grid;
+  gap: var(--space-3);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--line);
+}
+
+.settings .field {
+  max-width: 24rem;
+}
+
+.ledger-note {
+  margin: calc(var(--space-2) * -1) 0 var(--space-3);
+}
+
 /* ─── Backup ──────────────────────────────────────────────────────────────── */
 
 .backup {

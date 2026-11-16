@@ -27,7 +27,9 @@ describe('validateDraft', () => {
   const good: Draft = {
     name: '  Made-up concert ',
     amount: '250',
+    dueMode: 'month',
     dueMonth: '2027-03',
+    dueDate: '',
     saved: '',
     isPaid: false,
     paidMonth: '2026-11',
@@ -36,7 +38,14 @@ describe('validateDraft', () => {
   it('turns a good draft into clean fields', () => {
     expect(validateDraft(good)).toEqual({
       ok: true,
-      fields: { name: 'Made-up concert', targetCents: 25_000, dueMonth: '2027-03', savedCents: 0, paidMonth: undefined },
+      fields: {
+        name: 'Made-up concert',
+        targetCents: 25_000,
+        dueMonth: '2027-03',
+        dueDate: undefined,
+        savedCents: 0,
+        paidMonth: undefined,
+      },
     });
   });
 
@@ -59,7 +68,25 @@ describe('validateDraft', () => {
   });
 
   it('round-trips an existing expense through the form unchanged', () => {
-    const existing = { name: 'Made-up trip', targetCents: 89_950, dueMonth: '2027-01', savedCents: 30_000, paidMonth: '2026-11' };
+    const existing = {
+      name: 'Made-up trip',
+      targetCents: 89_950,
+      dueMonth: '2027-01',
+      dueDate: '2027-01-28',
+      savedCents: 30_000,
+      paidMonth: '2026-11',
+    };
     expect(validateDraft(draftFrom(existing, '2026-11'))).toEqual({ ok: true, fields: existing });
+  });
+
+  it('takes the month from an exact date, and clears the date in month mode', () => {
+    const dated = validateDraft({ ...good, dueMode: 'date', dueDate: '2026-12-05', dueMonth: '' });
+    expect(dated.ok && [dated.fields.dueMonth, dated.fields.dueDate]).toEqual(['2026-12', '2026-12-05']);
+
+    const monthOnly = validateDraft({ ...good, dueMode: 'month', dueDate: '2026-12-05' });
+    expect(monthOnly.ok && monthOnly.fields.dueDate).toBeUndefined();
+
+    const missingDay = validateDraft({ ...good, dueMode: 'date', dueDate: '' });
+    expect(!missingDay.ok && missingDay.errors.dueDate).toMatch(/Pick the day/);
   });
 });

@@ -23,7 +23,7 @@ const tyres: Envelope = { id: 'tyres', name: 'Made-up tyres', targetCents: 40_00
 
 /** A budget with these expenses and an empty savings log. */
 function budget(...envelopes: Envelope[]): BudgetData {
-  return { envelopes, log: [] };
+  return { envelopes, log: [], settings: { payday: 1 } };
 }
 
 /** A pretend server holding one row in memory, with the same rules as the real one. */
@@ -167,7 +167,7 @@ describe('unreadable synced copies', () => {
   });
 
   it('never calls a copy from a newer BudgetFlow damaged', async () => {
-    const { vaultKey, record } = await serverHolding('{"version":3,"somethingNew":[]}');
+    const { vaultKey, record } = await serverHolding('{"version":4,"somethingNew":[]}');
     expect(await decideStart(record, vaultKey, budget(trip), null)).toEqual({ kind: 'newer-app' });
   });
 

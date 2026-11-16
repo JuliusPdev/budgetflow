@@ -1,4 +1,5 @@
-import type { BudgetData, Envelope, LogEntry, SavedData } from '../engine/types';
+import { DEFAULT_PAYDAY } from '../engine/timing';
+import type { BudgetData, BudgetSettings, Envelope, LogEntry, SavedData } from '../engine/types';
 
 // The one place that knows where your budget (envelopes and savings log) is kept. Everything else asks this
 // door to load or save, and waits for the answer (a Promise). Today the answer
@@ -10,7 +11,8 @@ export interface EnvelopeStore {
   save(data: BudgetData): Promise<void>;
 }
 
-const EMPTY: BudgetData = { envelopes: [], log: [] };
+const DEFAULT_SETTINGS: BudgetSettings = { payday: DEFAULT_PAYDAY };
+const EMPTY: BudgetData = { envelopes: [], log: [], settings: DEFAULT_SETTINGS };
 
 /** The two things the store needs from a drawer — localStorage has both. */
 export interface KeyValueDrawer {
@@ -43,7 +45,12 @@ export function isEnvelope(value: unknown): value is Envelope {
     isWholeCents(candidate.targetCents) &&
     isMonth(candidate.dueMonth) &&
     isWholeCents(candidate.savedCents) &&
-    (candidate.paidMonth === undefined || isMonth(candidate.paidMonth))
+    (candidate.paidMonth === undefined || isMonth(candidate.paidMonth)) &&
+    // An exact date must be a real-looking day inside the due month.
+    (candidate.dueDate === undefined ||
+      (typeof candidate.dueDate === 'string' &&
+        DAY_PATTERN.test(candidate.dueDate) &&
+        candidate.dueDate.slice(0, 7) === candidate.dueMonth))
   );
 }
 
@@ -68,10 +75,19 @@ export function isLogEntry(value: unknown): value is LogEntry {
   return false;
 }
 
+function isSettings(value: unknown): value is BudgetSettings {
+  if (typeof value !== 'object' || value === null) return false;
+  const payday = (value as Record<string, unknown>).payday;
+  return typeof payday === 'number' && Number.isInteger(payday) && payday >= 1 && payday <= 31;
+}
+
 /**
  * Reads saved data in any version this app knows:
  *   1 — envelopes only, read as an empty log
  *   2 — envelopes and the savings log
+ *   3 — plus exact due dates and settings
+ * Older versions get the default settings (payday on the 1st), which keeps
+ * their calculations exactly as they were.
  */
 function parseSavedData(raw: string): BudgetData | null {
   try {
@@ -79,9 +95,11 @@ function parseSavedData(raw: string): BudgetData | null {
     if (typeof parsed !== 'object' || parsed === null) return null;
     const data = parsed as Record<string, unknown>;
     if (!Array.isArray(data.envelopes) || !data.envelopes.every(isEnvelope)) return null;
-    if (data.version === 1) return { envelopes: data.envelopes, log: [] };
-    if (data.version === 2 && Array.isArray(data.log) && data.log.every(isLogEntry)) {
-      return { envelopes: data.envelopes, log: data.log };
+    if (data.version === 1) return { envelopes: data.envelopes, log: [], settings: DEFAULT_SETTINGS };
+    if (!Array.isArray(data.log) || !data.log.every(isLogEntry)) return null;
+    if (data.version === 2) return { envelopes: data.envelopes, log: data.log, settings: DEFAULT_SETTINGS };
+    if (data.version === 3 && isSettings(data.settings)) {
+      return { envelopes: data.envelopes, log: data.log, settings: data.settings };
     }
     return null;
   } catch {
@@ -91,7 +109,7 @@ function parseSavedData(raw: string): BudgetData | null {
 
 /** Always writes the newest version. */
 function toSavedData(data: BudgetData): SavedData {
-  return { version: 2, envelopes: data.envelopes, log: data.log };
+  return { version: 3, envelopes: data.envelopes, log: data.log, settings: data.settings };
 }
 
 /**

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { applySplit } from '../engine/savingsLog';
+import { DEFAULT_PAYDAY } from '../engine/timing';
 import type { BudgetData, Envelope, EnvelopeFields, SetAsideEntry } from '../engine/types';
 import type { EnvelopeStore } from '../storage/envelopeStore';
 
@@ -8,7 +9,7 @@ import type { EnvelopeStore } from '../storage/envelopeStore';
  * start, saved back after every change, with actions to change it.
  */
 export function useEnvelopes(store: EnvelopeStore) {
-  const [data, setData] = useState<BudgetData>({ envelopes: [], log: [] });
+  const [data, setData] = useState<BudgetData>({ envelopes: [], log: [], settings: { payday: DEFAULT_PAYDAY } });
   const [isLoading, setIsLoading] = useState(true);
   // True when the browser refuses to read or write storage (e.g. some private windows).
   const [storageProblem, setStorageProblem] = useState(false);
@@ -77,6 +78,7 @@ export function useEnvelopes(store: EnvelopeStore) {
     // Created outside the update so a re-run update can't hand out a second id.
     const entry: SetAsideEntry = { ...details, id: crypto.randomUUID(), kind: 'set-aside' };
     setData((current) => ({
+      ...current,
       envelopes: applySplit(current.envelopes, entry.split, 1),
       log: [...current.log, entry],
     }));
@@ -89,8 +91,13 @@ export function useEnvelopes(store: EnvelopeStore) {
       const entry = current.log.find((candidate) => candidate.id === id);
       if (entry === undefined) return current;
       const envelopes = entry.kind === 'set-aside' ? applySplit(current.envelopes, entry.split, -1) : current.envelopes;
-      return { envelopes, log: current.log.filter((candidate) => candidate.id !== id) };
+      return { ...current, envelopes, log: current.log.filter((candidate) => candidate.id !== id) };
     });
+  }
+
+  /** The day of the month your pay usually arrives. */
+  function setPayday(payday: number): void {
+    setData((current) => ({ ...current, settings: { ...current.settings, payday } }));
   }
 
   /** Swaps the whole budget for another — used by backups and sync. */
@@ -111,5 +118,7 @@ export function useEnvelopes(store: EnvelopeStore) {
     restoreEnvelope,
     logSetAside,
     deleteLogEntry,
+    settings: data.settings,
+    setPayday,
   };
 }

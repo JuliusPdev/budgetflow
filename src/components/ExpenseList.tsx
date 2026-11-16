@@ -1,11 +1,14 @@
 import { useState } from 'react';
 import type { Envelope, EnvelopeFields, Month } from '../engine/types';
-import { formatEuros, formatMonthShort } from '../utils/format';
+import { fundingMonth, DEFAULT_PAYDAY } from '../engine/timing';
+import { formatDue, formatEuros, formatMonthShort } from '../utils/format';
 import { ExpenseForm } from './ExpenseForm';
 
 interface ExpenseListProps {
   envelopes: Envelope[];
   currentMonth: Month;
+  /** Day of the month pay arrives. */
+  payday: number;
   onAdd: (fields: EnvelopeFields) => void;
   onUpdate: (id: string, fields: EnvelopeFields) => void;
   onRemove: (id: string) => void;
@@ -22,6 +25,7 @@ export const NEW_EXPENSE = 'new';
 export function ExpenseList({
   envelopes,
   currentMonth,
+  payday,
   onAdd,
   onUpdate,
   onRemove,
@@ -86,6 +90,7 @@ export function ExpenseList({
                 <ExpenseForm
                   initial={envelope}
                   currentMonth={currentMonth}
+                  payday={payday}
                   submitLabel="Save changes"
                   onSave={(fields) => {
                     onUpdate(envelope.id, fields);
@@ -100,6 +105,7 @@ export function ExpenseList({
                 envelope={envelope}
                 onEdit={() => openFormFor(envelope.id)}
                 onDelete={() => handleDelete(envelope)}
+                payday={payday}
               />
             ),
           )}
@@ -110,6 +116,7 @@ export function ExpenseList({
         <div className="expense-new">
           <ExpenseForm
             currentMonth={currentMonth}
+            payday={payday}
             submitLabel="Add expense"
             onSave={(fields) => {
               onAdd(fields);
@@ -129,14 +136,16 @@ export function ExpenseList({
 
 interface ExpenseRowProps {
   envelope: Envelope;
+  payday: number;
   onEdit: () => void;
   onDelete: () => void;
 }
 
-function ExpenseRow({ envelope, onEdit, onDelete }: ExpenseRowProps) {
+function ExpenseRow({ envelope, payday, onEdit, onDelete }: ExpenseRowProps) {
   const details = [
     formatEuros(envelope.targetCents),
-    `due ${formatMonthShort(envelope.dueMonth)}`,
+    `due ${formatDue(envelope)}`,
+    ...(payday === DEFAULT_PAYDAY ? [] : [`from your ${formatMonthShort(fundingMonth(envelope, payday))} paycheck`]),
     `${formatEuros(envelope.savedCents)} saved`,
   ];
   if (envelope.paidMonth !== undefined) details.push(`paid ${formatMonthShort(envelope.paidMonth)}`);
