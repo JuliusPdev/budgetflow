@@ -3,11 +3,14 @@ import { Backup } from './components/Backup';
 import { EmptyStart, ExampleBanner } from './components/ExampleNotice';
 import { ExpenseList, NEW_EXPENSE } from './components/ExpenseList';
 import { LedgerColumns, LedgerRows } from './components/Ledger';
+import { SyncPanel } from './components/SyncPanel';
 import { ThisMonth } from './components/ThisMonth';
 import { monthOfDate } from './engine/months';
 import { planSetAside } from './engine/plan';
+import { useAccount } from './hooks/useAccount';
 import { useEnvelopes } from './hooks/useEnvelopes';
 import { useIsWide } from './hooks/useIsWide';
+import { useSync } from './hooks/useSync';
 import { sampleEnvelopes } from './sampleEnvelopes';
 import { createLocalStore } from './storage/envelopeStore';
 import { loadHideExamples, saveHideExamples } from './storage/preferences';
@@ -35,6 +38,13 @@ export default function App() {
     restoreEnvelope,
     replaceAllEnvelopes,
   } = useEnvelopes(store);
+  const { account, linkError, sendLink, signOut } = useAccount();
+  const sync = useSync({ account, envelopes: savedEnvelopes, isLoading, replaceAll: replaceAllEnvelopes });
+
+  async function signOutOfThisDevice(): Promise<void> {
+    await sync.forgetThisDevice();
+    await signOut();
+  }
 
   // Until the first real expense exists, show examples (never saved),
   // unless you've chosen to hide them.
@@ -129,6 +139,14 @@ export default function App() {
             onRestore={restoreEnvelope}
             openForm={openForm}
             onOpenFormChange={setOpenForm}
+          />
+
+          <SyncPanel
+            account={account}
+            linkError={linkError}
+            onSendLink={sendLink}
+            onSignOut={signOutOfThisDevice}
+            sync={sync}
           />
 
           <Backup envelopes={savedEnvelopes} onRestore={replaceAllEnvelopes} />

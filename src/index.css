@@ -674,6 +674,7 @@ ol {
 }
 
 .field input[type='text'],
+.field input[type='email'],
 .field input[type='month'] {
   min-height: 44px;
   padding: 0 12px;
@@ -734,6 +735,135 @@ ol {
   .field--wide {
     grid-column: 1 / -1;
   }
+}
+
+/* ─── Sync ────────────────────────────────────────────────────────────────── */
+
+.sync,
+.sync-form {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.sync {
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--line);
+}
+
+.sync-text {
+  max-width: 60ch;
+  font-size: 0.9375rem;
+  color: var(--ink-soft);
+}
+
+.sync-text strong {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.sync .field {
+  max-width: 24rem;
+}
+
+.sync-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.button-primary:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+/* Sync status and choices */
+
+.sync-status {
+  min-height: 1.5em;
+  font-size: 0.875rem;
+  color: var(--green);
+}
+
+.sync-status:empty {
+  display: none;
+}
+
+.sync-dot::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: var(--space-2);
+  vertical-align: 1px;
+  background: var(--green);
+  border-radius: 50%;
+}
+
+.sync-dot--busy {
+  color: var(--ink-soft);
+}
+
+.sync-dot--busy::before {
+  background: var(--line);
+}
+
+.sync-warning {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+  padding: var(--space-3) var(--space-4);
+  font-size: 0.875rem;
+  color: var(--terracotta);
+  background: var(--terracotta-soft);
+  border-radius: var(--radius);
+}
+
+.sync .field input[type='password'],
+.sync .field input[type='text'] {
+  font-family: var(--font-body);
+}
+
+.field input[type='password'] {
+  min-height: 44px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 1rem;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.checkbox--top {
+  align-items: flex-start;
+  max-width: 60ch;
+  font-size: 0.9375rem;
+}
+
+.checkbox--top input {
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.copy-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-5);
+  margin: 0;
+}
+
+.copy-counts dt {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.copy-counts dd {
+  margin: var(--space-1) 0 0;
+  font-family: var(--font-figures);
+  font-size: 1.125rem;
 }
 
 /* ─── Backup ──────────────────────────────────────────────────────────────── */
