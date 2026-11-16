@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { loanCents, type MonthPlan } from '../engine/plan';
 import type { Cents, Envelope } from '../engine/types';
 import { formatEuros, formatMonthLong, formatMonthShort } from '../utils/format';
@@ -8,10 +9,12 @@ interface ThisMonthProps {
   envelopes: Envelope[];
   /** Made-up example data: drawn dashed and tagged so it isn't mistaken for yours. */
   isExample?: boolean;
+  /** Extra content under the headline amount, e.g. this month's progress. */
+  children?: ReactNode;
 }
 
 /** The headline: how much to put aside this month, and what it is for. */
-export function ThisMonth({ monthPlan, envelopes, isExample = false }: ThisMonthProps) {
+export function ThisMonth({ monthPlan, envelopes, isExample = false, children }: ThisMonthProps) {
   if (monthPlan === undefined) {
     return (
       <section className="this-month">
@@ -45,6 +48,7 @@ export function ThisMonth({ monthPlan, envelopes, isExample = false }: ThisMonth
           <span className="headline-label">Put aside</span>
           <span className="headline-amount figures">{formatEuros(monthPlan.totalCents)}</span>
         </p>
+        {children}
       </div>
 
       <div className="this-month-goals">

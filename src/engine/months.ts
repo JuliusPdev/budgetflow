@@ -1,4 +1,4 @@
-import type { Month } from './types';
+import type { Day, Month } from './types';
 
 // Months are stored as text ("2027-01") so they sort and save nicely, but text
 // can't be subtracted. These helpers convert to a running count of months
@@ -18,6 +18,13 @@ function fromIndex(index: number): Month {
 /** The calendar month a date falls in, e.g. 15 Nov 2026 → "2026-11". */
 export function monthOfDate(date: Date): Month {
   return fromIndex(date.getFullYear() * 12 + date.getMonth());
+}
+
+/** The calendar day a date falls on, e.g. 16 Nov 2026 → "2026-11-16". */
+export function dayOfDate(date: Date): Day {
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
 }
 
 /** The month `count` months after `month` ("2026-11" + 3 → "2027-02"). */

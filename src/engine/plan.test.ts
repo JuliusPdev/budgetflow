@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addMonths, monthOfDate, monthRange, monthsInclusive } from './months';
+import { addMonths, dayOfDate, monthOfDate, monthRange, monthsInclusive } from './months';
 import { loanCents, planSetAside, type MonthPlan } from './plan';
 import type { Envelope } from './types';
 
@@ -32,6 +32,7 @@ describe('month helpers', () => {
 
   it('finds the month a date falls in', () => {
     expect(monthOfDate(new Date(2026, 10, 15))).toBe('2026-11');
+    expect(dayOfDate(new Date(2026, 10, 6))).toBe('2026-11-06');
   });
 });
 

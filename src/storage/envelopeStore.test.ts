@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Envelope } from '../engine/types';
+import type { BudgetData, Envelope, LogEntry } from '../engine/types';
 import {
   createLocalStore,
   parseBackup,
@@ -29,24 +29,36 @@ const trip: Envelope = {
   savedCents: 10_000,
 };
 
+const EMPTY: BudgetData = { envelopes: [], log: [] };
+
+const setAside: LogEntry = {
+  id: 'made-up-entry',
+  kind: 'set-aside',
+  date: '2026-11-16',
+  month: '2026-11',
+  amountCents: 10_000,
+  split: { trip: 10_000 },
+};
+
 describe('envelope store', () => {
   it('starts empty when nothing has been saved', async () => {
-    expect(await createLocalStore(fakeDrawer()).load()).toEqual([]);
+    expect(await createLocalStore(fakeDrawer()).load()).toEqual(EMPTY);
   });
 
   it('gives back exactly what was saved', async () => {
     const store = createLocalStore(fakeDrawer());
     const paidTrip = { ...trip, paidMonth: '2027-01' };
 
-    await store.save([trip, paidTrip]);
+    const data: BudgetData = { envelopes: [trip, paidTrip], log: [setAside] };
+    await store.save(data);
 
-    expect(await store.load()).toEqual([trip, paidTrip]);
+    expect(await store.load()).toEqual(data);
   });
 
   it('backs up unreadable data instead of crashing or losing it', async () => {
     const drawer = fakeDrawer({ [STORAGE_KEY]: '{half a save' });
 
-    expect(await createLocalStore(drawer).load()).toEqual([]);
+    expect(await createLocalStore(drawer).load()).toEqual(EMPTY);
     expect(drawer.contents.get(UNREADABLE_BACKUP_KEY)).toBe('{half a save');
   });
 
@@ -56,14 +68,31 @@ describe('envelope store', () => {
 
     for (const broken of [missingDueMonth, centsWithDecimals]) {
       const drawer = fakeDrawer({ [STORAGE_KEY]: JSON.stringify({ version: 1, envelopes: [broken] }) });
-      expect(await createLocalStore(drawer).load()).toEqual([]);
+      expect(await createLocalStore(drawer).load()).toEqual(EMPTY);
     }
+  });
+
+  it('reads data saved before the savings log existed (version 1) as an empty log', async () => {
+    const drawer = fakeDrawer({ [STORAGE_KEY]: JSON.stringify({ version: 1, envelopes: [trip] }) });
+    expect(await createLocalStore(drawer).load()).toEqual({ envelopes: [trip], log: [] });
+  });
+
+  it('always saves the newest version', async () => {
+    const drawer = fakeDrawer();
+    await createLocalStore(drawer).save({ envelopes: [trip], log: [] });
+    expect(JSON.parse(drawer.contents.get(STORAGE_KEY) ?? '{}').version).toBe(2);
+  });
+
+  it('rejects a log entry with a broken split', async () => {
+    const broken = { ...setAside, split: { trip: 12.5 } };
+    const drawer = fakeDrawer({ [STORAGE_KEY]: JSON.stringify({ version: 2, envelopes: [trip], log: [broken] }) });
+    expect(await createLocalStore(drawer).load()).toEqual(EMPTY);
   });
 
   it('ignores data saved by the old app', async () => {
     const drawer = fakeDrawer({ 'budgetflow-v1': '{"budget":{}}' });
 
-    expect(await createLocalStore(drawer).load()).toEqual([]);
+    expect(await createLocalStore(drawer).load()).toEqual(EMPTY);
     expect(drawer.contents.get('budgetflow-v1')).toBe('{"budget":{}}');
   });
 });
@@ -71,7 +100,8 @@ describe('envelope store', () => {
 describe('backup files', () => {
   it('reads back exactly what was written', () => {
     const paidTrip = { ...trip, id: 'paid', paidMonth: '2027-01' };
-    expect(parseBackup(serializeBackup([trip, paidTrip]))).toEqual([trip, paidTrip]);
+    const data: BudgetData = { envelopes: [trip, paidTrip], log: [setAside] };
+    expect(parseBackup(serializeBackup(data))).toEqual(data);
   });
 
   it('refuses files that are not BudgetFlow backups', () => {

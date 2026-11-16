@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { VaultKey } from '../crypto/vault';
-import type { Envelope } from '../engine/types';
+import type { BudgetData } from '../engine/types';
 import { forgetVaultKey, loadVaultKey, saveVaultKey } from '../sync/keyStore';
 import { supabaseVault } from '../sync/remoteVault';
 import {
@@ -30,11 +30,11 @@ export type SyncStatus =
 
 interface UseSyncOptions {
   account: AccountState;
-  /** Your saved expenses on this device. */
-  envelopes: Envelope[];
+  /** Your budget on this device: saved expenses and the savings log. */
+  data: BudgetData;
   /** True until this device's own list has loaded. */
   isLoading: boolean;
-  replaceAll: (envelopes: Envelope[]) => void;
+  replaceAll: (data: BudgetData) => void;
 }
 
 const UNAVAILABLE_MESSAGE =
@@ -46,24 +46,24 @@ function messageFor(error: unknown): string {
 }
 
 /** Keeps this device's list in step with the encrypted copy on the server. */
-export function useSync({ account, envelopes, isLoading, replaceAll }: UseSyncOptions) {
+export function useSync({ account, data, isLoading, replaceAll }: UseSyncOptions) {
   const [status, setStatus] = useState<SyncStatus>({ kind: 'off' });
   const userId = account.status === 'signed-in' ? account.userId : null;
 
   // What the sync steps need right now, without redrawing the screen.
   const userIdRef = useRef(userId);
-  const envelopesRef = useRef(envelopes);
+  const dataRef = useRef(data);
   const statusRef = useRef(status);
   const keyRef = useRef<VaultKey | null>(null);
   // Null while sync is paused (needs setup, unlock, or a choice): nothing is pushed.
   const pointRef = useRef<SyncPoint | null>(null);
-  const choiceRef = useRef<{ remoteEnvelopes: Envelope[]; record: RemoteRecord } | null>(null);
+  const choiceRef = useRef<{ remoteData: BudgetData; record: RemoteRecord } | null>(null);
   // Sync steps run one at a time, in order, like a single checkout lane.
   const queueRef = useRef<Promise<void>>(Promise.resolve());
 
   useEffect(() => {
     userIdRef.current = userId;
-    envelopesRef.current = envelopes;
+    dataRef.current = data;
     statusRef.current = status;
   });
 
@@ -102,8 +102,8 @@ export function useSync({ account, envelopes, isLoading, replaceAll }: UseSyncOp
       case 'use-remote':
         // Agree first, so receiving the list doesn't echo back as a save.
         agree(decision.point);
-        replaceAll(decision.envelopes);
-        envelopesRef.current = decision.envelopes;
+        replaceAll(decision.data);
+        dataRef.current = decision.data;
         return;
       case 'push-local':
         // The stale fingerprint guarantees the push goes ahead.
@@ -112,11 +112,11 @@ export function useSync({ account, envelopes, isLoading, replaceAll }: UseSyncOp
         return;
       case 'choose':
         pointRef.current = null;
-        choiceRef.current = { remoteEnvelopes: decision.remoteEnvelopes, record: decision.record };
+        choiceRef.current = { remoteData: decision.remoteData, record: decision.record };
         setStatus({
           kind: 'choose',
-          deviceCount: envelopesRef.current.length,
-          syncedCount: decision.remoteEnvelopes.length,
+          deviceCount: dataRef.current.envelopes.length,
+          syncedCount: decision.remoteData.envelopes.length,
         });
         return;
     }
@@ -128,14 +128,14 @@ export function useSync({ account, envelopes, isLoading, replaceAll }: UseSyncOp
     setStatus({ kind: 'starting' });
     const [vaultKey, record] = await Promise.all([loadVaultKey(id), supabaseVault.fetch()]);
     keyRef.current = vaultKey;
-    await apply(await decideStart(record, vaultKey, envelopesRef.current, loadSyncPoint(id)));
+    await apply(await decideStart(record, vaultKey, dataRef.current, loadSyncPoint(id)));
   }
 
   async function pushNow(): Promise<void> {
     const vaultKey = keyRef.current;
     const point = pointRef.current;
     if (vaultKey === null || point === null) return;
-    const local = envelopesRef.current;
+    const local = dataRef.current;
     if ((await fingerprint(local)) === point.fingerprint) return;
 
     setStatus({ kind: 'saving' });
@@ -154,7 +154,7 @@ export function useSync({ account, envelopes, isLoading, replaceAll }: UseSyncOp
     if (vaultKey === null || point === null) return;
     const record = await supabaseVault.fetch();
     if (record !== null && record.revision === point.revision) return;
-    await apply(await decideStart(record, vaultKey, envelopesRef.current, point));
+    await apply(await decideStart(record, vaultKey, dataRef.current, point));
   }
 
   // 1. Start when signed in and this device's list has loaded; stop when signed out.
@@ -178,7 +178,7 @@ export function useSync({ account, envelopes, isLoading, replaceAll }: UseSyncOp
     const timer = window.setTimeout(() => void enqueue(pushNow), 800);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [envelopes]);
+  }, [data]);
 
   // 3. Catch up when you come back to BudgetFlow or the connection returns.
   useEffect(() => {
@@ -203,7 +203,7 @@ export function useSync({ account, envelopes, isLoading, replaceAll }: UseSyncOp
     const id = userIdRef.current;
     if (id === null) return null;
     try {
-      const result = await setUpVault(supabaseVault, passphrase, envelopesRef.current);
+      const result = await setUpVault(supabaseVault, passphrase, dataRef.current);
       if (result === 'exists') {
         await enqueue(start);
         return 'Sync was already turned on from another device. Enter that passphrase instead.';
@@ -231,7 +231,7 @@ export function useSync({ account, envelopes, isLoading, replaceAll }: UseSyncOp
       if (vaultKey === null) return "That passphrase doesn't open your synced expenses. Check it and try again.";
       keyRef.current = vaultKey;
       await saveVaultKey(id, vaultKey);
-      await apply(await decideStart(record, vaultKey, envelopesRef.current, loadSyncPoint(id)));
+      await apply(await decideStart(record, vaultKey, dataRef.current, loadSyncPoint(id)));
       return null;
     } catch (error) {
       return messageFor(error);
@@ -245,9 +245,9 @@ export function useSync({ account, envelopes, isLoading, replaceAll }: UseSyncOp
     if (choice === null) return Promise.resolve();
     return enqueue(async () => {
       if (keep === 'synced') {
-        agree({ revision: choice.record.revision, fingerprint: await fingerprint(choice.remoteEnvelopes) });
-        replaceAll(choice.remoteEnvelopes);
-        envelopesRef.current = choice.remoteEnvelopes;
+        agree({ revision: choice.record.revision, fingerprint: await fingerprint(choice.remoteData) });
+        replaceAll(choice.remoteData);
+        dataRef.current = choice.remoteData;
       } else {
         pointRef.current = { revision: choice.record.revision, fingerprint: '' };
         await pushNow();

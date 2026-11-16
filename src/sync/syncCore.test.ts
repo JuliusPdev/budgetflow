@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createVaultKey, sealText } from '../crypto/vault';
-import type { Envelope } from '../engine/types';
+import type { BudgetData, Envelope } from '../engine/types';
 import { serializeBackup } from '../storage/envelopeStore';
 import {
   checkNewPassphrase,
@@ -20,6 +20,11 @@ const PASSPHRASE = 'made-up quiet harbour lantern';
 
 const trip: Envelope = { id: 'trip', name: 'Made-up trip', targetCents: 50_000, dueMonth: '2027-03', savedCents: 0 };
 const tyres: Envelope = { id: 'tyres', name: 'Made-up tyres', targetCents: 40_000, dueMonth: '2027-02', savedCents: 0 };
+
+/** A budget with these expenses and an empty savings log. */
+function budget(...envelopes: Envelope[]): BudgetData {
+  return { envelopes, log: [] };
+}
 
 /** A pretend server holding one row in memory, with the same rules as the real one. */
 function fakeServer(): RemoteVault & { record: RemoteRecord | null } {
@@ -43,9 +48,9 @@ function fakeServer(): RemoteVault & { record: RemoteRecord | null } {
 }
 
 /** A server row holding `envelopes`, plus the key that opens it. */
-async function serverWith(envelopes: Envelope[], revision: number) {
+async function serverWith(data: BudgetData, revision: number) {
   const vaultKey = await createVaultKey(PASSPHRASE, FAST);
-  const record: RemoteRecord = { box: await sealText(vaultKey, serializeBackup(envelopes)), revision };
+  const record: RemoteRecord = { box: await sealText(vaultKey, serializeBackup(data)), revision };
   return { vaultKey, record };
 }
 
@@ -59,15 +64,15 @@ describe('passphrase rules', () => {
 
 describe('fingerprint', () => {
   it('is the same for the same list and different after any change', async () => {
-    expect(await fingerprint([trip])).toBe(await fingerprint([{ ...trip }]));
-    expect(await fingerprint([trip])).not.toBe(await fingerprint([{ ...trip, savedCents: 1 }]));
+    expect(await fingerprint(budget(trip))).toBe(await fingerprint(budget({ ...trip })));
+    expect(await fingerprint(budget(trip))).not.toBe(await fingerprint(budget({ ...trip, savedCents: 1 })));
   });
 });
 
 describe('two devices', () => {
   it('sets up on one device and unlocks the same list on another', async () => {
     const server = fakeServer();
-    const setUp = await setUpVault(server, PASSPHRASE, [trip, tyres], FAST);
+    const setUp = await setUpVault(server, PASSPHRASE, budget(trip, tyres), FAST);
     expect(setUp).not.toBe('exists');
 
     const record = await server.fetch();
@@ -75,76 +80,76 @@ describe('two devices', () => {
     expect(JSON.stringify(record.box)).not.toContain('Made-up trip');
 
     const otherDeviceKey = await unlockVault(PASSPHRASE, record);
-    const decision = await decideStart(record, otherDeviceKey, [], null);
-    expect(decision).toMatchObject({ kind: 'use-remote', envelopes: [trip, tyres] });
+    const decision = await decideStart(record, otherDeviceKey, budget(), null);
+    expect(decision).toMatchObject({ kind: 'use-remote', data: budget(trip, tyres) });
   });
 
   it('refuses the wrong passphrase on the other device', async () => {
-    const { record } = await serverWith([trip], 1);
+    const { record } = await serverWith(budget(trip), 1);
     expect(await unlockVault('made-up wrong passphrase', record)).toBeNull();
   });
 
   it('does not set up twice', async () => {
     const server = fakeServer();
-    await setUpVault(server, PASSPHRASE, [trip], FAST);
-    expect(await setUpVault(server, 'made-up other passphrase', [tyres], FAST)).toBe('exists');
+    await setUpVault(server, PASSPHRASE, budget(trip), FAST);
+    expect(await setUpVault(server, 'made-up other passphrase', budget(tyres), FAST)).toBe('exists');
   });
 });
 
 describe('decideStart', () => {
   it('asks to set up when there is no row, and to unlock when this device has no key', async () => {
-    const { record } = await serverWith([trip], 1);
-    expect(await decideStart(null, null, [], null)).toEqual({ kind: 'needs-setup' });
-    expect(await decideStart(record, null, [], null)).toEqual({ kind: 'needs-unlock' });
+    const { record } = await serverWith(budget(trip), 1);
+    expect(await decideStart(null, null, budget(), null)).toEqual({ kind: 'needs-setup' });
+    expect(await decideStart(record, null, budget(), null)).toEqual({ kind: 'needs-unlock' });
   });
 
   it('asks to unlock again when the stored key no longer fits', async () => {
-    const { record } = await serverWith([trip], 1);
+    const { record } = await serverWith(budget(trip), 1);
     const staleKey = await createVaultKey('made-up old passphrase', FAST);
-    expect(await decideStart(record, staleKey, [trip], null)).toEqual({ kind: 'needs-unlock' });
+    expect(await decideStart(record, staleKey, budget(trip), null)).toEqual({ kind: 'needs-unlock' });
   });
 
   it('is in step when both sides hold the same list', async () => {
-    const { vaultKey, record } = await serverWith([trip], 3);
-    expect(await decideStart(record, vaultKey, [trip], null)).toMatchObject({ kind: 'in-step', point: { revision: 3 } });
+    const { vaultKey, record } = await serverWith(budget(trip), 3);
+    expect(await decideStart(record, vaultKey, budget(trip), null)).toMatchObject({ kind: 'in-step', point: { revision: 3 } });
   });
 
   it('asks the first time when this device already has a different list', async () => {
-    const { vaultKey, record } = await serverWith([trip], 1);
-    expect(await decideStart(record, vaultKey, [tyres], null)).toMatchObject({ kind: 'choose' });
+    const { vaultKey, record } = await serverWith(budget(trip), 1);
+    expect(await decideStart(record, vaultKey, budget(tyres), null)).toMatchObject({ kind: 'choose' });
   });
 
   it('takes the server copy when only the server changed', async () => {
-    const { vaultKey, record } = await serverWith([trip, tyres], 2);
-    const lastPoint: SyncPoint = { revision: 1, fingerprint: await fingerprint([trip]) };
-    expect(await decideStart(record, vaultKey, [trip], lastPoint)).toMatchObject({
+    const { vaultKey, record } = await serverWith(budget(trip, tyres), 2);
+    const lastPoint: SyncPoint = { revision: 1, fingerprint: await fingerprint(budget(trip)) };
+    expect(await decideStart(record, vaultKey, budget(trip), lastPoint)).toMatchObject({
       kind: 'use-remote',
-      envelopes: [trip, tyres],
+      data: budget(trip, tyres),
     });
   });
 
   it('sends this device copy when only this device changed', async () => {
-    const { vaultKey, record } = await serverWith([trip], 1);
-    const lastPoint: SyncPoint = { revision: 1, fingerprint: await fingerprint([trip]) };
-    expect(await decideStart(record, vaultKey, [trip, tyres], lastPoint)).toEqual({ kind: 'push-local', revision: 1 });
+    const { vaultKey, record } = await serverWith(budget(trip), 1);
+    const lastPoint: SyncPoint = { revision: 1, fingerprint: await fingerprint(budget(trip)) };
+    expect(await decideStart(record, vaultKey, budget(trip, tyres), lastPoint)).toEqual({ kind: 'push-local', revision: 1 });
   });
 
   it('asks when both changed since they last agreed', async () => {
-    const { vaultKey, record } = await serverWith([tyres], 2);
-    const lastPoint: SyncPoint = { revision: 1, fingerprint: await fingerprint([trip]) };
-    expect(await decideStart(record, vaultKey, [trip, tyres], lastPoint)).toMatchObject({ kind: 'choose' });
+    const { vaultKey, record } = await serverWith(budget(tyres), 2);
+    const lastPoint: SyncPoint = { revision: 1, fingerprint: await fingerprint(budget(trip)) };
+    expect(await decideStart(record, vaultKey, budget(trip, tyres), lastPoint)).toMatchObject({ kind: 'choose' });
   });
 });
 
 describe('pushLocal', () => {
   it('saves when nobody saved in between, and reports a conflict otherwise', async () => {
     const server = fakeServer();
-    const setUp = await setUpVault(server, PASSPHRASE, [trip], FAST);
+    const setUp = await setUpVault(server, PASSPHRASE, budget(trip), FAST);
     if (setUp === 'exists') throw new Error('expected a fresh setup');
 
-    const saved = await pushLocal(server, setUp.vaultKey, [trip, tyres], 1);
+    const saved = await pushLocal(server, setUp.vaultKey, budget(trip, tyres), 1);
     expect(saved).toMatchObject({ revision: 2 });
     // A device still thinking the server is at revision 1 must not overwrite revision 2.
-    expect(await pushLocal(server, setUp.vaultKey, [tyres], 1)).toBe('conflict');
+    expect(await pushLocal(server, setUp.vaultKey, budget(tyres), 1)).toBe('conflict');
   });
 });

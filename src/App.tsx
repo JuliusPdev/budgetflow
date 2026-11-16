@@ -5,8 +5,10 @@ import { ExpenseList, NEW_EXPENSE } from './components/ExpenseList';
 import { LedgerColumns, LedgerRows } from './components/Ledger';
 import { SyncPanel } from './components/SyncPanel';
 import { ThisMonth } from './components/ThisMonth';
-import { monthOfDate } from './engine/months';
+import { dayOfDate, monthOfDate } from './engine/months';
 import { planSetAside } from './engine/plan';
+import { envelopesAtMonthStart } from './engine/savingsLog';
+import { MonthProgress } from './components/MonthProgress';
 import { useAccount } from './hooks/useAccount';
 import { useEnvelopes } from './hooks/useEnvelopes';
 import { useIsWide } from './hooks/useIsWide';
@@ -36,10 +38,14 @@ export default function App() {
     updateEnvelope,
     removeEnvelope,
     restoreEnvelope,
-    replaceAllEnvelopes,
+    log,
+    logSetAside,
+    deleteLogEntry,
+    data,
+    replaceAll,
   } = useEnvelopes(store);
   const { account, linkError, sendLink, signOut } = useAccount();
-  const sync = useSync({ account, envelopes: savedEnvelopes, isLoading, replaceAll: replaceAllEnvelopes });
+  const sync = useSync({ account, data, isLoading, replaceAll });
 
   const isSyncing = ['synced', 'saving', 'unavailable'].includes(sync.status.kind);
 
@@ -57,7 +63,13 @@ export default function App() {
     () => (showingExample ? sampleEnvelopes(currentMonth) : savedEnvelopes),
     [showingExample, savedEnvelopes, currentMonth],
   );
-  const plan = useMemo(() => planSetAside(envelopes, currentMonth), [envelopes, currentMonth]);
+  // Examples have no log. Planning from the month's start keeps this month's
+  // amount fixed while you log set-asides against it.
+  const activeLog = useMemo(() => (showingExample ? [] : log), [showingExample, log]);
+  const plan = useMemo(
+    () => planSetAside(envelopesAtMonthStart(envelopes, activeLog, currentMonth), currentMonth),
+    [envelopes, activeLog, currentMonth],
+  );
 
   // Columns suit a wide screen, rows a phone — unless the user picks one.
   const isWide = useIsWide();
@@ -100,7 +112,18 @@ export default function App() {
             {listIsEmpty && hideExamples ? (
               <EmptyStart onAddFirst={openAddForm} onShowExamples={() => changeHideExamples(false)} />
             ) : (
-              <ThisMonth monthPlan={plan[0]} envelopes={envelopes} isExample={showingExample} />
+              <ThisMonth monthPlan={plan[0]} envelopes={envelopes} isExample={showingExample}>
+                {!showingExample && plan[0] !== undefined && (
+                  <MonthProgress
+                    monthPlan={plan[0]}
+                    envelopes={envelopes}
+                    log={log}
+                    today={dayOfDate(new Date())}
+                    onLog={logSetAside}
+                    onUndo={deleteLogEntry}
+                  />
+                )}
+              </ThisMonth>
             )}
           </div>
 
@@ -151,7 +174,7 @@ export default function App() {
             sync={sync}
           />
 
-          <Backup envelopes={savedEnvelopes} onRestore={replaceAllEnvelopes} isSyncing={isSyncing} />
+          <Backup data={data} onRestore={replaceAll} isSyncing={isSyncing} />
         </main>
       )}
     </div>

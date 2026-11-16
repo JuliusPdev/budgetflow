@@ -46,11 +46,48 @@ export interface Envelope {
 /** An envelope's own details, without its id — what a form edits. */
 export type EnvelopeFields = Omit<Envelope, 'id'>;
 
+/** A calendar day written as "YYYY-MM-DD". */
+export type Day = string;
+
 /**
- * Everything BudgetFlow saves. The version number lets a future app
- * recognize data written in an older shape and convert it instead of crashing.
+ * Money moved into savings, and exactly how it was split across envelopes —
+ * remembered so that deleting the entry can undo precisely what it did.
  */
-export interface SavedData {
-  version: 1;
+export interface SetAsideEntry {
+  id: string;
+  kind: 'set-aside';
+  date: Day;
+  month: Month;
+  amountCents: Cents;
+  /** Cents added to each envelope, by envelope id. */
+  split: Record<string, Cents>;
+}
+
+/** Money taken out for something unplanned, recorded as a loan envelope to repay. */
+export interface WithdrawalEntry {
+  id: string;
+  kind: 'withdrawal';
+  date: Day;
+  month: Month;
+  amountCents: Cents;
+  /** The loan envelope this withdrawal created. */
+  envelopeId: string;
+}
+
+export type LogEntry = SetAsideEntry | WithdrawalEntry;
+
+/** Everything about your budget: the envelopes, and the log of what you actually did. */
+export interface BudgetData {
   envelopes: Envelope[];
+  log: LogEntry[];
+}
+
+/**
+ * Everything BudgetFlow saves. The version number lets the app recognize data
+ * written in an older shape and convert it instead of crashing:
+ *   1 — envelopes only (read as an empty log)
+ *   2 — envelopes and the savings log
+ */
+export interface SavedData extends BudgetData {
+  version: 2;
 }

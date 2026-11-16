@@ -1,11 +1,11 @@
 import { useRef, useState, type ChangeEvent } from 'react';
-import type { Envelope } from '../engine/types';
+import type { BudgetData } from '../engine/types';
 import { parseBackup, serializeBackup } from '../storage/envelopeStore';
 
 interface BackupProps {
-  /** Your saved expenses (never the examples). */
-  envelopes: Envelope[];
-  onRestore: (envelopes: Envelope[]) => void;
+  /** Your saved budget: expenses and savings log (never the examples). */
+  data: BudgetData;
+  onRestore: (data: BudgetData) => void;
   /** True once sync is running, which changes what a backup is for. */
   isSyncing: boolean;
 }
@@ -23,14 +23,15 @@ function todayStamp(): string {
 }
 
 /** Download your expenses as a file, or restore them from one. All on your device. */
-export function Backup({ envelopes, onRestore, isSyncing }: BackupProps) {
+export function Backup({ data, onRestore, isSyncing }: BackupProps) {
+  const { envelopes } = data;
   const fileInput = useRef<HTMLInputElement>(null);
   // A valid backup waiting for "Replace?" because you already have expenses.
-  const [pending, setPending] = useState<Envelope[] | null>(null);
+  const [pending, setPending] = useState<BudgetData | null>(null);
   const [message, setMessage] = useState<{ text: string; isError: boolean } | null>(null);
 
   function handleDownload(): void {
-    const file = new Blob([serializeBackup(envelopes)], { type: 'application/json' });
+    const file = new Blob([serializeBackup(data)], { type: 'application/json' });
     const address = URL.createObjectURL(file);
     const link = document.createElement('a');
     link.href = address;
@@ -41,10 +42,10 @@ export function Backup({ envelopes, onRestore, isSyncing }: BackupProps) {
     setMessage({ text: `Backup of ${expensesLabel(envelopes.length)} downloaded`, isError: false });
   }
 
-  function restore(fromBackup: Envelope[]): void {
+  function restore(fromBackup: BudgetData): void {
     onRestore(fromBackup);
     setPending(null);
-    setMessage({ text: `Restored ${expensesLabel(fromBackup.length)}`, isError: false });
+    setMessage({ text: `Restored ${expensesLabel(fromBackup.envelopes.length)}`, isError: false });
   }
 
   async function handleFileChosen(event: ChangeEvent<HTMLInputElement>): Promise<void> {
@@ -99,7 +100,7 @@ export function Backup({ envelopes, onRestore, isSyncing }: BackupProps) {
       {pending !== null && (
         <div className="backup-confirm" role="alertdialog" aria-labelledby="backup-confirm-text">
           <p id="backup-confirm-text">
-            Replace your {expensesLabel(envelopes.length)} with the {expensesLabel(pending.length)} in this
+            Replace your {expensesLabel(envelopes.length)} with the {expensesLabel(pending.envelopes.length)} in this
             backup?
           </p>
           <div className="backup-actions">

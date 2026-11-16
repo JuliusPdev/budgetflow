@@ -330,6 +330,59 @@ ol {
   color: var(--ink-soft);
 }
 
+/* This month's progress */
+
+.month-progress {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--line);
+}
+
+.progress-line {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-size: 0.9375rem;
+  color: var(--ink-soft);
+}
+
+.progress-line .figures {
+  color: var(--ink);
+}
+
+.progress-bar {
+  height: 8px;
+  margin: 0;
+}
+
+.progress-done {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--green);
+}
+
+.log-form {
+  margin-top: var(--space-2);
+}
+
+.log-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.log-row input {
+  flex: 1 1 8rem;
+  min-width: 0;
+}
+
+.month-progress .undo-bar {
+  margin: 0;
+}
+
 /* ─── Ledger ──────────────────────────────────────────────────────────────── */
 
 .ledger-heading {

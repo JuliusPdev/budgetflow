@@ -7,7 +7,7 @@ import {
   type SealedBox,
   type VaultKey,
 } from '../crypto/vault';
-import type { Envelope } from '../engine/types';
+import type { BudgetData } from '../engine/types';
 import { parseBackup, serializeBackup } from '../storage/envelopeStore';
 
 // The decisions and steps of syncing, independent of React and of Supabase:
@@ -39,13 +39,13 @@ export class SyncUnavailableError extends Error {
 /** The last moment this device agreed with the server. */
 export interface SyncPoint {
   revision: number;
-  /** A short code computed from the list: same list, same code. */
+  /** A short code computed from the budget: same budget, same code. */
   fingerprint: string;
 }
 
-/** SHA-256 of the list, as hex. Detects any change without keeping a second copy. */
-export async function fingerprint(envelopes: Envelope[]): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(serializeBackup(envelopes)));
+/** SHA-256 of the budget, as hex. Detects any change without keeping a second copy. */
+export async function fingerprint(data: BudgetData): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(serializeBackup(data)));
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
@@ -60,11 +60,11 @@ export function checkNewPassphrase(first: string, second: string): string | null
   return null;
 }
 
-/** First device: makes the key, locks this device's list, creates the row. */
+/** First device: makes the key, locks this device's budget, creates the row. */
 export async function setUpVault(
   remote: RemoteVault,
   passphrase: string,
-  local: Envelope[],
+  local: BudgetData,
   iterations = DEFAULT_ITERATIONS,
 ): Promise<{ vaultKey: VaultKey; point: SyncPoint } | 'exists'> {
   const vaultKey = await createVaultKey(passphrase, iterations);
@@ -83,12 +83,12 @@ export type StartDecision =
   | { kind: 'needs-setup' }
   | { kind: 'needs-unlock' }
   | { kind: 'in-step'; point: SyncPoint }
-  | { kind: 'use-remote'; envelopes: Envelope[]; point: SyncPoint }
+  | { kind: 'use-remote'; data: BudgetData; point: SyncPoint }
   | { kind: 'push-local'; revision: number }
-  | { kind: 'choose'; remoteEnvelopes: Envelope[]; record: RemoteRecord };
+  | { kind: 'choose'; remoteData: BudgetData; record: RemoteRecord };
 
 /**
- * What to do, comparing this device's list and the server's row against the
+ * What to do, comparing this device's budget and the server's row against the
  * last moment they agreed (lastPoint):
  *   device unchanged, server unchanged → in step
  *   device unchanged, server changed   → take the server's
@@ -98,7 +98,7 @@ export type StartDecision =
 export async function decideStart(
   record: RemoteRecord | null,
   vaultKey: VaultKey | null,
-  local: Envelope[],
+  local: BudgetData,
   lastPoint: SyncPoint | null,
 ): Promise<StartDecision> {
   if (record === null) return { kind: 'needs-setup' };
@@ -107,32 +107,32 @@ export async function decideStart(
   const text = await openBox(vaultKey, record.box);
   // The key no longer fits (e.g. the passphrase was changed elsewhere).
   if (text === null) return { kind: 'needs-unlock' };
-  const remoteEnvelopes = parseBackup(text);
-  if (remoteEnvelopes === null) throw new Error('The synced data could not be read.');
+  const remoteData = parseBackup(text);
+  if (remoteData === null) throw new Error('The synced data could not be read.');
 
-  const [localPrint, remotePrint] = await Promise.all([fingerprint(local), fingerprint(remoteEnvelopes)]);
+  const [localPrint, remotePrint] = await Promise.all([fingerprint(local), fingerprint(remoteData)]);
   const remotePoint: SyncPoint = { revision: record.revision, fingerprint: remotePrint };
   if (localPrint === remotePrint) return { kind: 'in-step', point: remotePoint };
 
   if (lastPoint === null) {
-    // First time on this device: an empty list simply takes the synced copy.
-    return local.length === 0
-      ? { kind: 'use-remote', envelopes: remoteEnvelopes, point: remotePoint }
-      : { kind: 'choose', remoteEnvelopes, record };
+    // First time on this device: an empty budget simply takes the synced copy.
+    return local.envelopes.length === 0 && local.log.length === 0
+      ? { kind: 'use-remote', data: remoteData, point: remotePoint }
+      : { kind: 'choose', remoteData, record };
   }
 
   const deviceChanged = localPrint !== lastPoint.fingerprint;
   const serverChanged = record.revision !== lastPoint.revision;
-  if (!deviceChanged) return { kind: 'use-remote', envelopes: remoteEnvelopes, point: remotePoint };
+  if (!deviceChanged) return { kind: 'use-remote', data: remoteData, point: remotePoint };
   if (!serverChanged) return { kind: 'push-local', revision: record.revision };
-  return { kind: 'choose', remoteEnvelopes, record };
+  return { kind: 'choose', remoteData, record };
 }
 
-/** Locks this device's list and saves it, if nobody saved since knownRevision. */
+/** Locks this device's budget and saves it, if nobody saved since knownRevision. */
 export async function pushLocal(
   remote: RemoteVault,
   vaultKey: VaultKey,
-  local: Envelope[],
+  local: BudgetData,
   knownRevision: number,
 ): Promise<SyncPoint | 'conflict'> {
   const updated = await remote.update(await sealText(vaultKey, serializeBackup(local)), knownRevision);
