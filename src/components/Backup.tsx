@@ -6,6 +6,8 @@ interface BackupProps {
   /** Your saved expenses (never the examples). */
   envelopes: Envelope[];
   onRestore: (envelopes: Envelope[]) => void;
+  /** True once sync is running, which changes what a backup is for. */
+  isSyncing: boolean;
 }
 
 function expensesLabel(count: number): string {
@@ -21,7 +23,7 @@ function todayStamp(): string {
 }
 
 /** Download your expenses as a file, or restore them from one. All on your device. */
-export function Backup({ envelopes, onRestore }: BackupProps) {
+export function Backup({ envelopes, onRestore, isSyncing }: BackupProps) {
   const fileInput = useRef<HTMLInputElement>(null);
   // A valid backup waiting for "Replace?" because you already have expenses.
   const [pending, setPending] = useState<Envelope[] | null>(null);
@@ -69,7 +71,9 @@ export function Backup({ envelopes, onRestore }: BackupProps) {
         Backup
       </h2>
       <p className="backup-text">
-        Your expenses live only in this browser. Download a backup now and then, and keep it somewhere safe.
+        {isSyncing
+          ? 'Your expenses are synced between your devices. A backup is an extra safety copy, worth having in case you ever forget your passphrase.'
+          : 'Your expenses live only in this browser. Download a backup now and then, and keep it somewhere safe.'}
       </p>
 
       <div className="backup-actions">

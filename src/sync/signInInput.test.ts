@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { friendlySignInError, isPlausibleEmail, normalizeEmail, readLinkReturn } from './signInInput';
+import { friendlySignInError, isPlausibleEmail, normalizeEmail, readLinkReturn, secondsUntil } from './signInInput';
 
 describe('sign-in input', () => {
   it('accepts ordinary email addresses and catches obvious typos', () => {
@@ -33,10 +33,19 @@ describe('coming back from a sign-in link', () => {
 describe('friendlySignInError', () => {
   it('explains sign-in errors in plain words', () => {
     expect(friendlySignInError({ status: 0 })).toMatch(/Couldn't reach the sync service/);
-    expect(friendlySignInError({ status: 429, code: 'over_email_send_rate_limit' })).toMatch(/Too many/);
+    expect(friendlySignInError({ status: 429, code: 'over_email_send_rate_limit' })).toMatch(/about 2 sign-in emails per hour/);
     expect(friendlySignInError({ code: 'otp_expired' })).toMatch(/expired or was already used/);
     expect(friendlySignInError({ code: 'bad_code_verifier' })).toMatch(/same browser/);
     expect(friendlySignInError({ status: 422, code: 'signup_disabled' })).toMatch(/switched off/);
     expect(friendlySignInError({ status: 500 })).toMatch(/Something went wrong/);
+  });
+});
+
+describe('secondsUntil', () => {
+  it('counts down in whole seconds, rounding up, and stops at zero', () => {
+    expect(secondsUntil(60_000, 0)).toBe(60);
+    expect(secondsUntil(60_000, 59_001)).toBe(1);
+    expect(secondsUntil(60_000, 60_000)).toBe(0);
+    expect(secondsUntil(60_000, 75_000)).toBe(0);
   });
 });

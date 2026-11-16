@@ -11,6 +11,14 @@ export function normalizeEmail(text: string): string {
   return text.trim().toLowerCase();
 }
 
+/** How long to wait after sending a link, so quick re-taps can't use up the hourly email allowance. */
+export const RESEND_WAIT_MS = 60_000;
+
+/** Whole seconds left until `until`, rounded up so it never shows 0 while still waiting. */
+export function secondsUntil(until: number, now: number): number {
+  return Math.max(0, Math.ceil((until - now) / 1000));
+}
+
 /** The address-bar details Supabase adds when it sends you back from a link. */
 const RETURN_PARAMS = ['code', 'error', 'error_code', 'error_description'];
 
@@ -42,7 +50,7 @@ export function friendlySignInError(error: SignInErrorInfo): string {
     return "Couldn't reach the sync service. Check your connection. If BudgetFlow hasn't been used for a week, the sync database may be asleep: wake it in the Supabase dashboard.";
   }
   if (error.status === 429 || error.code === 'over_email_send_rate_limit') {
-    return 'Too many sign-in emails requested. Wait a while and try again.';
+    return "Supabase's free email service sends only about 2 sign-in emails per hour. Wait up to an hour and try once more, and check your spam folder for the earlier email first.";
   }
   if (error.code === 'signup_disabled') {
     return 'New accounts are switched off for this BudgetFlow.';

@@ -41,6 +41,8 @@ export default function App() {
   const { account, linkError, sendLink, signOut } = useAccount();
   const sync = useSync({ account, envelopes: savedEnvelopes, isLoading, replaceAll: replaceAllEnvelopes });
 
+  const isSyncing = ['synced', 'saving', 'unavailable'].includes(sync.status.kind);
+
   async function signOutOfThisDevice(): Promise<void> {
     await sync.forgetThisDevice();
     await signOut();
@@ -149,7 +151,7 @@ export default function App() {
             sync={sync}
           />
 
-          <Backup envelopes={savedEnvelopes} onRestore={replaceAllEnvelopes} />
+          <Backup envelopes={savedEnvelopes} onRestore={replaceAllEnvelopes} isSyncing={isSyncing} />
         </main>
       )}
     </div>

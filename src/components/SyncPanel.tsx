@@ -1,7 +1,7 @@
-import { useId, useState, type FormEvent } from 'react';
+import { useEffect, useId, useState, type FormEvent } from 'react';
 import type { AccountState } from '../hooks/useAccount';
 import type { SyncStatus } from '../hooks/useSync';
-import { isPlausibleEmail, normalizeEmail } from '../sync/signInInput';
+import { isPlausibleEmail, normalizeEmail, RESEND_WAIT_MS, secondsUntil } from '../sync/signInInput';
 import { ChooseCopy, PassphraseSetup, PassphraseUnlock } from './SyncSetup';
 
 interface SyncPanelProps {
@@ -32,15 +32,36 @@ export function SyncPanel({ account, linkError, onSendLink, onSignOut, sync }: S
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sentAgain, setSentAgain] = useState(false);
+  // When sending is allowed again, and "now", ticking once a second while waiting.
+  const [resendAllowedAt, setResendAllowedAt] = useState<number | null>(null);
+  const [now, setNow] = useState(() => Date.now());
   const fieldId = useId();
   const errorId = `${fieldId}-error`;
 
+  useEffect(() => {
+    if (resendAllowedAt === null) return;
+    const timer = window.setInterval(() => {
+      const current = Date.now();
+      setNow(current);
+      // Waiting is over: stop ticking.
+      if (current >= resendAllowedAt) setResendAllowedAt(null);
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [resendAllowedAt]);
+
+  // Worked out, not stored: seconds left before another email may be sent.
+  const waitSeconds = resendAllowedAt === null ? 0 : secondsUntil(resendAllowedAt, now);
+
   async function send(): Promise<void> {
+    if (waitSeconds > 0) return;
     setIsBusy(true);
     const problem = await onSendLink(normalizeEmail(emailText));
     setIsBusy(false);
     setError(problem);
     if (problem !== null) return;
+    const sentAt = Date.now();
+    setNow(sentAt);
+    setResendAllowedAt(sentAt + RESEND_WAIT_MS);
     setSentAgain(step === 'sent');
     setStep('sent');
   }
@@ -143,10 +164,11 @@ export function SyncPanel({ account, linkError, onSendLink, onSignOut, sync }: S
             )}
           </div>
           <div className="sync-actions">
-            <button type="submit" className="button-primary" disabled={isBusy}>
-              {isBusy ? 'Sending…' : 'Send link'}
+            <button type="submit" className="button-primary" disabled={isBusy || waitSeconds > 0}>
+              {isBusy ? 'Sending…' : waitSeconds > 0 ? `Send link in ${waitSeconds} s` : 'Send link'}
             </button>
           </div>
+          {waitSeconds > 0 && <p className="field-hint">Waiting a minute saves your hourly email allowance.</p>}
         </form>
       )}
 
@@ -162,13 +184,23 @@ export function SyncPanel({ account, linkError, onSendLink, onSignOut, sync }: S
             </p>
           )}
           <div className="sync-actions">
-            <button type="button" className="button-secondary" disabled={isBusy} onClick={() => void send()}>
-              {isBusy ? 'Sending…' : 'Send again'}
+            <button
+              type="button"
+              className="button-secondary"
+              disabled={isBusy || waitSeconds > 0}
+              onClick={() => void send()}
+            >
+              {isBusy ? 'Sending…' : waitSeconds > 0 ? `Send again in ${waitSeconds} s` : 'Send again'}
             </button>
             <button type="button" className="button-secondary" onClick={startOver}>
               Use a different email
             </button>
           </div>
+          {waitSeconds > 0 && (
+            <p className="field-hint">
+              Supabase sends only about 2 sign-in emails per hour, so sending again waits a minute.
+            </p>
+          )}
         </div>
       )}
     </section>
