@@ -8,7 +8,7 @@ import { ThisMonth } from './components/ThisMonth';
 import { dayOfDate, monthOfDate } from './engine/months';
 import { planSetAside } from './engine/plan';
 import { envelopesAtMonthStart } from './engine/savingsLog';
-import { DEFAULT_PAYDAY, paycheckMonthOf, paycheckRange, planningView } from './engine/timing';
+import { DEFAULT_PAYDAY, paycheckDates, paycheckMonthOf, planningView } from './engine/timing';
 import { MonthProgress } from './components/MonthProgress';
 import { PaydaySettings } from './components/PaydaySettings';
 import { useAccount } from './hooks/useAccount';
@@ -17,7 +17,7 @@ import { useIsWide } from './hooks/useIsWide';
 import { useSync } from './hooks/useSync';
 import { sampleEnvelopes } from './sampleEnvelopes';
 import { createLocalStore } from './storage/envelopeStore';
-import { formatDayShort, ordinal } from './utils/format';
+import { formatDayShort, formatMonthLong, ordinal } from './utils/format';
 import { loadHideExamples, saveHideExamples } from './storage/preferences';
 
 type LayoutChoice = 'auto' | 'rows' | 'columns';
@@ -52,8 +52,10 @@ export default function App() {
   } = useEnvelopes(store);
   const currentPaycheck = paycheckMonthOf(dayOfDate(new Date()), settings.payday);
   const hasPayday = settings.payday !== DEFAULT_PAYDAY;
-  const range = paycheckRange(currentPaycheck, settings.payday);
-  const paycheckLabel = hasPayday ? `${formatDayShort(range.from)} – ${formatDayShort(range.to)}` : undefined;
+  const phase = paycheckDates(currentPaycheck, settings.payday);
+  // From the last payday to the next one: the stretch you can still contribute to.
+  const paycheckLabel = hasPayday ? `${formatDayShort(phase.last)} – ${formatDayShort(phase.next)}` : undefined;
+  const periodName = hasPayday ? 'this savings phase' : formatMonthLong(currentPaycheck).split(' ')[0];
   const { account, linkError, sendLink, signOut } = useAccount();
   const sync = useSync({ account, data, isLoading, replaceAll });
 
@@ -131,6 +133,7 @@ export default function App() {
                 envelopes={envelopes}
                 isExample={showingExample}
                 paycheckLabel={paycheckLabel}
+                calendarMonth={calendarMonth}
               >
                 {!showingExample && plan[0] !== undefined && (
                   <MonthProgress
@@ -138,6 +141,7 @@ export default function App() {
                     envelopes={envelopes}
                     log={log}
                     today={dayOfDate(new Date())}
+                    periodName={periodName}
                     onLog={logSetAside}
                     onUndo={deleteLogEntry}
                   />

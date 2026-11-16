@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { planSetAside } from './plan';
-import { fundingMonth, paycheckMonthOf, paycheckRange, planningView } from './timing';
+import { fundingMonth, paycheckDates, paycheckMonthOf, paycheckRange, planningView } from './timing';
 import type { Envelope } from './types';
 
 // Payday on the 21st, as in the examples we discussed. Amounts are made up.
@@ -41,6 +41,11 @@ describe('the current paycheck', () => {
     expect(paycheckMonthOf('2026-11-16', PAYDAY)).toBe('2026-10');
     expect(paycheckMonthOf('2026-11-21', PAYDAY)).toBe('2026-11');
     expect(paycheckMonthOf('2026-12-05', PAYDAY)).toBe('2026-11');
+  });
+
+  it('is opened by the last payday and closed by the next one', () => {
+    expect(paycheckDates('2026-10', PAYDAY)).toEqual({ last: '2026-10-21', next: '2026-11-21' });
+    expect(paycheckDates('2027-01', 31)).toEqual({ last: '2027-01-31', next: '2027-02-28' });
   });
 
   it('runs from payday to the day before the next one', () => {

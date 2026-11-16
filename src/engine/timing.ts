@@ -56,3 +56,12 @@ export function paycheckRange(month: Month, payday: number): { from: Day; to: Da
   const to = lastDay === 0 ? `${month}-${String(daysInMonth(month)).padStart(2, '0')}` : `${next}-${String(lastDay).padStart(2, '0')}`;
   return { from: `${month}-${String(paydayIn(month, payday)).padStart(2, '0')}`, to };
 }
+
+/** The paydays that open and close a savings phase: e.g. 21 Oct and 21 Nov. */
+export function paycheckDates(month: Month, payday: number): { last: Day; next: Day } {
+  const next = addMonths(month, 1);
+  return {
+    last: `${month}-${String(paydayIn(month, payday)).padStart(2, '0')}`,
+    next: `${next}-${String(paydayIn(next, payday)).padStart(2, '0')}`,
+  };
+}

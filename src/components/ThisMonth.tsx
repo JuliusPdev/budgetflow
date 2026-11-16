@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { loanCents, type MonthPlan } from '../engine/plan';
-import type { Cents, Envelope } from '../engine/types';
+import type { Cents, Envelope, Month } from '../engine/types';
 import { formatDue, formatEuros, formatMonthLong, formatMonthShort } from '../utils/format';
 
 interface ThisMonthProps {
@@ -9,14 +9,23 @@ interface ThisMonthProps {
   envelopes: Envelope[];
   /** Made-up example data: drawn dashed and tagged so it isn't mistaken for yours. */
   isExample?: boolean;
-  /** With a payday set: the stretch this paycheck covers, e.g. "21 Nov – 20 Dec". */
+  /** With a payday set: the savings phase, from last to next payday, e.g. "21 Oct – 21 Nov". */
   paycheckLabel?: string;
+  /** The real calendar month, shown as the title when a payday is set. */
+  calendarMonth?: Month;
   /** Extra content under the headline amount, e.g. this month's progress. */
   children?: ReactNode;
 }
 
 /** The headline: how much to put aside this month, and what it is for. */
-export function ThisMonth({ monthPlan, envelopes, isExample = false, paycheckLabel, children }: ThisMonthProps) {
+export function ThisMonth({
+  monthPlan,
+  envelopes,
+  isExample = false,
+  paycheckLabel,
+  calendarMonth,
+  children,
+}: ThisMonthProps) {
   if (monthPlan === undefined) {
     return (
       <section className="this-month">
@@ -40,11 +49,12 @@ export function ThisMonth({ monthPlan, envelopes, isExample = false, paycheckLab
     >
       <div className="this-month-headline">
         <p className="eyebrow">
-          {paycheckLabel === undefined ? 'This month' : `This paycheck · ${paycheckLabel}`}
+          {paycheckLabel === undefined ? 'This month' : `Current savings phase · ${paycheckLabel}`}
           {isExample && <span className="example-tag">Example</span>}
         </p>
         <h1 id="this-month-title" className="this-month-title">
-          {formatMonthLong(monthPlan.month)}
+          {/* The real month: what you're spending in right now. */}
+          {formatMonthLong(calendarMonth ?? monthPlan.month)}
         </h1>
         <p className="headline">
           <span className="headline-label">Put aside</span>

@@ -3,7 +3,7 @@ import type { MonthPlan } from '../engine/plan';
 import { setAsideInMonth, splitSetAside, stillOpenThisMonth } from '../engine/savingsLog';
 import type { Cents, Day, Envelope, LogEntry, SetAsideEntry } from '../engine/types';
 import { centsToInputText, parseEurosToCents } from '../utils/expenseDraft';
-import { formatEuros, formatMonthLong } from '../utils/format';
+import { formatEuros } from '../utils/format';
 
 interface MonthProgressProps {
   /** This month's plan, calculated from where things stood at the start of the month. */
@@ -12,15 +12,16 @@ interface MonthProgressProps {
   envelopes: Envelope[];
   log: LogEntry[];
   today: Day;
+  /** How to name this period in sentences: a month ("November") or "this savings phase". */
+  periodName: string;
   onLog: (details: Omit<SetAsideEntry, 'id' | 'kind'>) => string;
   onUndo: (entryId: string) => void;
 }
 
 /** How much of this month's plan you've actually set aside, and a way to log more. */
-export function MonthProgress({ monthPlan, envelopes, log, today, onLog, onUndo }: MonthProgressProps) {
+export function MonthProgress({ monthPlan, envelopes, log, today, periodName, onLog, onUndo }: MonthProgressProps) {
   const loggedCents = setAsideInMonth(log, monthPlan.month);
   const openCents = stillOpenThisMonth(monthPlan, log);
-  const monthName = formatMonthLong(monthPlan.month).split(' ')[0];
 
   const [amountText, setAmountText] = useState(() => (openCents > 0 ? centsToInputText(openCents) : ''));
   const [error, setError] = useState<string | null>(null);
@@ -73,7 +74,7 @@ export function MonthProgress({ monthPlan, envelopes, log, today, onLog, onUndo 
       <div
         className="goal-bar progress-bar"
         role="progressbar"
-        aria-label={`Set aside in ${monthName}`}
+        aria-label={`Set aside in ${periodName}`}
         aria-valuemin={0}
         aria-valuemax={monthPlan.totalCents / 100}
         aria-valuenow={Math.min(loggedCents, monthPlan.totalCents) / 100}
@@ -81,7 +82,7 @@ export function MonthProgress({ monthPlan, envelopes, log, today, onLog, onUndo 
       >
         <span className="goal-bar-fill" style={{ width: `${progress * 100}%` }} />
       </div>
-      {isDone && <p className="progress-done sync-dot">Done for {monthName}</p>}
+      {isDone && <p className="progress-done sync-dot">Done for {periodName}</p>}
 
       <form className="log-form" onSubmit={handleSubmit} noValidate>
         <div className="field">
@@ -127,7 +128,7 @@ export function MonthProgress({ monthPlan, envelopes, log, today, onLog, onUndo 
         {lastLogged !== null && (
           <p className="undo-bar">
             <span>
-              Logged {formatEuros(lastLogged.amountCents)} for {monthName}.
+              Logged {formatEuros(lastLogged.amountCents)} for {periodName}.
               {lastLogged.extraCents > 0 &&
                 ` ${formatEuros(lastLogged.extraCents)} more than your expenses need right now; it stays in the pot as extra.`}
             </span>
