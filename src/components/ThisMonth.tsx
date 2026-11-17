@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { loanCents, type MonthPlan } from '../engine/plan';
-import type { Cents, Envelope, Month } from '../engine/types';
-import { formatDue, formatEuros, formatMonthLong, formatMonthShort } from '../utils/format';
+import type { Cents, Day, Envelope } from '../engine/types';
+import { formatDayLong, formatDue, formatEuros, formatMonthShort } from '../utils/format';
 
 interface ThisMonthProps {
   /** The plan's first month; missing when there is nothing to save for. */
@@ -11,8 +11,13 @@ interface ThisMonthProps {
   isExample?: boolean;
   /** With a payday set: the savings phase, from last to next payday, e.g. "21 Oct – 21 Nov". */
   paycheckLabel?: string;
-  /** The real calendar month, shown as the title when a payday is set. */
-  calendarMonth?: Month;
+  /** Today, shown as the title so it's easy to compare with the savings phase. */
+  today: Day;
+  /**
+   * What's still missing of this period's plan after what you've logged.
+   * Left out for examples, which have no log: then the full plan is shown.
+   */
+  stillOpenCents?: Cents;
   /** Extra content under the headline amount, e.g. this month's progress. */
   children?: ReactNode;
 }
@@ -23,7 +28,8 @@ export function ThisMonth({
   envelopes,
   isExample = false,
   paycheckLabel,
-  calendarMonth,
+  today,
+  stillOpenCents,
   children,
 }: ThisMonthProps) {
   if (monthPlan === undefined) {
@@ -53,13 +59,29 @@ export function ThisMonth({
           {isExample && <span className="example-tag">Example</span>}
         </p>
         <h1 id="this-month-title" className="this-month-title">
-          {/* The real month: what you're spending in right now. */}
-          {formatMonthLong(calendarMonth ?? monthPlan.month)}
+          {formatDayLong(today)}
         </h1>
-        <p className="headline">
-          <span className="headline-label">Put aside</span>
-          <span className="headline-amount figures">{formatEuros(monthPlan.totalCents)}</span>
-        </p>
+        {stillOpenCents === undefined ? (
+          <p className="headline">
+            <span className="headline-label">Put aside</span>
+            <span className="headline-amount figures">{formatEuros(monthPlan.totalCents)}</span>
+          </p>
+        ) : (
+          // The big number is only what's still missing, so it never looks owed once it's done.
+          <p className="headline">
+            {stillOpenCents > 0 ? (
+              <>
+                <span className="headline-label">Still to put aside</span>
+                <span className="headline-amount figures">{formatEuros(stillOpenCents)}</span>
+              </>
+            ) : (
+              <>
+                <span className="headline-label">{paycheckLabel === undefined ? 'This month' : 'This savings phase'}</span>
+                <span className="headline-amount headline-done">Done</span>
+              </>
+            )}
+          </p>
+        )}
         {children}
       </div>
 

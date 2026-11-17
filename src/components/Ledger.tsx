@@ -1,6 +1,8 @@
 import type { MonthPlan } from '../engine/plan';
 import type { Cents, Envelope } from '../engine/types';
-import { formatDayShort, formatEuros, formatMonthShort } from '../utils/format';
+import { periodMonth } from '../engine/timing';
+import type { Month } from '../engine/types';
+import { formatDayShort, formatEuros, formatMonthShort, formatPeriod } from '../utils/format';
 
 // Two arrangements of the same plan. They only lay numbers out differently —
 // every number comes straight from the engine, so switching can't change one.
@@ -8,6 +10,8 @@ import { formatDayShort, formatEuros, formatMonthShort } from '../utils/format';
 interface LedgerProps {
   plan: MonthPlan[];
   envelopes: Envelope[];
+  /** Day of the month pay arrives: names each period by its real dates. */
+  payday: number;
 }
 
 function nameLookup(envelopes: Envelope[]): (id: string) => string {
@@ -25,12 +29,23 @@ function billLookup(envelopes: Envelope[]): (id: string) => string {
   };
 }
 
+/** A period's name: the month it mostly covers, big, with its payday-to-payday dates small underneath. */
+function PeriodName({ month, payday }: { month: Month; payday: number }) {
+  const dates = formatPeriod(month, payday);
+  return (
+    <span className="period-name">
+      <span className="period-month">{formatMonthShort(periodMonth(month, payday))}</span>
+      {dates !== null && <span className="period-dates">{dates}</span>}
+    </span>
+  );
+}
+
 function sumOf(amounts: Record<string, Cents>): Cents {
   return Object.values(amounts).reduce((total, amount) => total + amount, 0);
 }
 
 /** Phone layout: one block per month, read top to bottom like a statement. */
-export function LedgerRows({ plan, envelopes }: LedgerProps) {
+export function LedgerRows({ plan, envelopes, payday }: LedgerProps) {
   const nameOf = nameLookup(envelopes);
   const billOf = billLookup(envelopes);
 
@@ -45,7 +60,9 @@ export function LedgerRows({ plan, envelopes }: LedgerProps) {
             style={{ animationDelay: `${index * 30}ms` }}
           >
             <div className="ledger-row-head">
-              <span className="ledger-month">{formatMonthShort(monthPlan.month)}</span>
+              <span className="ledger-month">
+                <PeriodName month={monthPlan.month} payday={payday} />
+              </span>
               <span className="ledger-amount figures">{formatEuros(monthPlan.totalCents)}</span>
             </div>
             <ul className="ledger-for">
@@ -74,7 +91,7 @@ export function LedgerRows({ plan, envelopes }: LedgerProps) {
 }
 
 /** Computer layout: one row per goal, months running left to right. */
-export function LedgerColumns({ plan, envelopes }: LedgerProps) {
+export function LedgerColumns({ plan, envelopes, payday }: LedgerProps) {
   const billOf = billLookup(envelopes);
   const goals = [...envelopes]
     .filter((envelope) => plan.some((month) => month.byEnvelope[envelope.id] !== undefined))
@@ -96,7 +113,7 @@ export function LedgerColumns({ plan, envelopes }: LedgerProps) {
             </th>
             {plan.map((monthPlan, index) => (
               <th key={monthPlan.month} scope="col" className={cellClass(index)}>
-                {formatMonthShort(monthPlan.month)}
+                <PeriodName month={monthPlan.month} payday={payday} />
               </th>
             ))}
           </tr>

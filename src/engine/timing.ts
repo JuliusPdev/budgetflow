@@ -65,3 +65,14 @@ export function paycheckDates(month: Month, payday: number): { last: Day; next: 
     next: `${next}-${String(paydayIn(next, payday)).padStart(2, '0')}`,
   };
 }
+
+/**
+ * The calendar month a paycheck period mostly covers: with payday on the 21st,
+ * "21 Oct – 20 Nov" is mostly November. People think in months, so the ledger
+ * names each period this way. A tie goes to the month the period starts in.
+ */
+export function periodMonth(month: Month, payday: number): Month {
+  const daysInStartMonth = daysInMonth(month) - paydayIn(month, payday) + 1;
+  const daysInNextMonth = paydayIn(addMonths(month, 1), payday) - 1;
+  return daysInNextMonth > daysInStartMonth ? addMonths(month, 1) : month;
+}

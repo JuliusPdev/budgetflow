@@ -7,7 +7,7 @@ import { SyncPanel } from './components/SyncPanel';
 import { ThisMonth } from './components/ThisMonth';
 import { dayOfDate, monthOfDate } from './engine/months';
 import { planSetAside } from './engine/plan';
-import { envelopesAtMonthStart } from './engine/savingsLog';
+import { envelopesAtMonthStart, stillOpenThisMonth } from './engine/savingsLog';
 import { DEFAULT_PAYDAY, paycheckDates, paycheckMonthOf, planningView } from './engine/timing';
 import { MonthProgress } from './components/MonthProgress';
 import { PaydaySettings } from './components/PaydaySettings';
@@ -133,7 +133,8 @@ export default function App() {
                 envelopes={envelopes}
                 isExample={showingExample}
                 paycheckLabel={paycheckLabel}
-                calendarMonth={calendarMonth}
+                today={dayOfDate(new Date())}
+                stillOpenCents={showingExample ? undefined : stillOpenThisMonth(plan[0], log)}
               >
                 {!showingExample && plan[0] !== undefined && (
                   <MonthProgress
@@ -172,13 +173,14 @@ export default function App() {
               </div>
               {hasPayday && (
                 <p className="field-hint ledger-note">
-                  Each month here is a paycheck, paid around the {ordinal(settings.payday)}.
+                  Each month here is one paycheck, paid around the {ordinal(settings.payday)}, named after the
+                  month it mostly covers. Underneath: the dates it has to last.
                 </p>
               )}
               {layout === 'columns' ? (
-                <LedgerColumns plan={plan} envelopes={envelopes} />
+                <LedgerColumns plan={plan} envelopes={envelopes} payday={settings.payday} />
               ) : (
-                <LedgerRows plan={plan} envelopes={envelopes} />
+                <LedgerRows plan={plan} envelopes={envelopes} payday={settings.payday} />
               )}
             </section>
           )}

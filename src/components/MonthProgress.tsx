@@ -23,7 +23,10 @@ export function MonthProgress({ monthPlan, envelopes, log, today, periodName, on
   const loggedCents = setAsideInMonth(log, monthPlan.month);
   const openCents = stillOpenThisMonth(monthPlan, log);
 
-  const [amountText, setAmountText] = useState(() => (openCents > 0 ? centsToInputText(openCents) : ''));
+  // Only what you typed is remembered. Until you type, the field follows what's
+  // still open, so it stays right when the plan changes.
+  const [typedText, setTypedText] = useState<string | null>(null);
+  const amountText = typedText ?? (openCents > 0 ? centsToInputText(openCents) : '');
   const [error, setError] = useState<string | null>(null);
   const [lastLogged, setLastLogged] = useState<{ id: string; amountCents: Cents; extraCents: Cents } | null>(
     null,
@@ -48,15 +51,14 @@ export function MonthProgress({ monthPlan, envelopes, log, today, periodName, on
     const { split, extraCents } = splitSetAside(amountCents, monthPlan, envelopes, log);
     const id = onLog({ date: today, month: monthPlan.month, amountCents, split });
     setLastLogged({ id, amountCents, extraCents });
-    const nextOpen = Math.max(0, openCents - amountCents);
-    setAmountText(nextOpen > 0 ? centsToInputText(nextOpen) : '');
+    setTypedText(null);
     setError(null);
   }
 
   function handleUndo(): void {
     if (lastLogged === null) return;
     onUndo(lastLogged.id);
-    setAmountText(centsToInputText(lastLogged.amountCents));
+    setTypedText(null);
     setLastLogged(null);
   }
 
@@ -97,7 +99,7 @@ export function MonthProgress({ monthPlan, envelopes, log, today, periodName, on
               aria-invalid={error !== null}
               aria-describedby={`${fieldId}-hint`}
               onChange={(event) => {
-                setAmountText(event.target.value);
+                setTypedText(event.target.value);
                 setError(null);
               }}
             />

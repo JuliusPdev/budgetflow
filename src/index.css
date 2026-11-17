@@ -383,6 +383,11 @@ ol {
   margin: 0;
 }
 
+.headline-done {
+  font-family: var(--font-display);
+  color: var(--green);
+}
+
 /* ─── Ledger ──────────────────────────────────────────────────────────────── */
 
 .ledger-heading {
@@ -461,6 +466,33 @@ ol {
 .ledger-month {
   font-family: var(--font-display);
   font-size: 1.25rem;
+}
+
+.period-name {
+  display: inline-flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.period-month {
+  font-family: var(--font-display);
+}
+
+/* The savings period: smaller and quieter, so the month reads first. */
+.period-dates {
+  margin-top: 2px;
+  font-family: var(--font-body);
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--dim);
+}
+
+.ledger-table thead .period-name {
+  align-items: flex-end;
+}
+
+.ledger-table thead .period-month {
+  font-size: 1.125rem;
 }
 
 .ledger-amount {

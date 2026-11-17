@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { planSetAside } from './plan';
-import { fundingMonth, paycheckDates, paycheckMonthOf, paycheckRange, planningView } from './timing';
+import { fundingMonth, paycheckDates, paycheckMonthOf, paycheckRange, periodMonth, planningView } from './timing';
 import type { Envelope } from './types';
 
 // Payday on the 21st, as in the examples we discussed. Amounts are made up.
@@ -52,6 +52,24 @@ describe('the current paycheck', () => {
     expect(paycheckRange('2026-11', PAYDAY)).toEqual({ from: '2026-11-21', to: '2026-12-20' });
     expect(paycheckRange('2026-11', 1)).toEqual({ from: '2026-11-01', to: '2026-11-30' });
     expect(paycheckRange('2027-01', 31)).toEqual({ from: '2027-01-31', to: '2027-02-27' });
+  });
+});
+
+describe('the month a period is named after', () => {
+  it('is the month holding most of its days', () => {
+    // 21 Oct – 20 Nov: 11 days in October, 20 in November.
+    expect(periodMonth('2026-10', PAYDAY)).toBe('2026-11');
+    // 5 Nov – 4 Dec: mostly November.
+    expect(periodMonth('2026-11', 5)).toBe('2026-11');
+  });
+
+  it('is the month itself with payday on the 1st', () => {
+    expect(periodMonth('2026-11', 1)).toBe('2026-11');
+  });
+
+  it('goes to the starting month on a tie', () => {
+    // 16 Nov – 15 Dec: 15 days each.
+    expect(periodMonth('2026-11', 16)).toBe('2026-11');
   });
 });
 
