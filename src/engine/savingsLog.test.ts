@@ -35,6 +35,11 @@ describe('the pot', () => {
     expect(potCents([flights, tyres], log)).toBe(50_000);
   });
 
+  it('never counts a paycheck as money in the pot', () => {
+    const paid: LogEntry = { id: 'pay', kind: 'paycheck', date: '2026-11-19', month: NOVEMBER, amountCents: 240_000 };
+    expect(potCents([flights, tyres], [...log, paid])).toBe(50_000);
+  });
+
   it('can go below zero when more was paid than put in', () => {
     expect(potCents([tyres], [])).toBe(-40_000);
   });

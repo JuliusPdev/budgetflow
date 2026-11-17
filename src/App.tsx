@@ -8,7 +8,9 @@ import { ThisMonth } from './components/ThisMonth';
 import { dayOfDate, monthOfDate } from './engine/months';
 import { planFromPot, sharePot, withShares } from './engine/pot';
 import { potAtPeriodStart, potCents, stillOpenThisMonth } from './engine/savingsLog';
-import { DEFAULT_PAYDAY, paycheckDates, paycheckMonthOf, planningView } from './engine/timing';
+import { currentPeriod } from './engine/paychecks';
+import { DEFAULT_PAYDAY, planningView } from './engine/timing';
+import { PaycheckButton } from './components/PaycheckButton';
 import type { LogEntry } from './engine/types';
 import { PotPanel } from './components/PotPanel';
 import { MonthProgress } from './components/MonthProgress';
@@ -47,6 +49,7 @@ export default function App() {
     log,
     logSetAside,
     correctPot,
+    logPaycheck,
     changeLogAmount,
     deleteLogEntry,
     settings,
@@ -54,9 +57,12 @@ export default function App() {
     data,
     replaceAll,
   } = useEnvelopes(store);
-  const currentPaycheck = paycheckMonthOf(dayOfDate(new Date()), settings.payday);
+  const today = dayOfDate(new Date());
   const hasPayday = settings.payday !== DEFAULT_PAYDAY;
-  const phase = paycheckDates(currentPaycheck, settings.payday);
+  // From your last recorded paycheck, or your usual payday until you record one.
+  const period = currentPeriod(log, today, settings.payday);
+  const currentPaycheck = period.month;
+  const phase = { last: period.start, next: period.nextExpected };
   // From the last payday to the next one: the stretch you can still contribute to.
   const paycheckLabel = hasPayday ? `${formatDayShort(phase.last)} – ${formatDayShort(phase.next)}` : undefined;
   const periodName = hasPayday ? 'this savings phase' : formatMonthLong(currentPaycheck).split(' ')[0];
@@ -153,6 +159,16 @@ export default function App() {
                 today={dayOfDate(new Date())}
                 stillOpenCents={showingExample ? undefined : stillOpenThisMonth(plan[0], log)}
               >
+                {!showingExample && hasPayday && (
+                  <PaycheckButton
+                    period={period}
+                    log={log}
+                    payday={settings.payday}
+                    today={today}
+                    onLog={logPaycheck}
+                    onUndo={deleteLogEntry}
+                  />
+                )}
                 {!showingExample && plan[0] !== undefined && (
                   <MonthProgress
                     monthPlan={plan[0]}
@@ -194,9 +210,9 @@ export default function App() {
                 </p>
               )}
               {layout === 'columns' ? (
-                <LedgerColumns plan={plan} envelopes={shownEnvelopes} payday={settings.payday} />
+                <LedgerColumns plan={plan} envelopes={shownEnvelopes} payday={settings.payday} currentStart={period.startIsReal ? period.start : undefined} />
               ) : (
-                <LedgerRows plan={plan} envelopes={shownEnvelopes} payday={settings.payday} />
+                <LedgerRows plan={plan} envelopes={shownEnvelopes} payday={settings.payday} currentStart={period.startIsReal ? period.start : undefined} />
               )}
             </section>
           )}

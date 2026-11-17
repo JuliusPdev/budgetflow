@@ -2,7 +2,7 @@ import { useId, useState, type FormEvent } from 'react';
 import type { Cents, LogEntry } from '../engine/types';
 import { STARTING_BALANCE_ID } from '../storage/envelopeStore';
 import { centsToInputText, parseEurosToCents } from '../utils/expenseDraft';
-import { formatDayShort, formatEuros } from '../utils/format';
+import { formatDayShort, formatEuros, formatMonthShort } from '../utils/format';
 
 interface PotHistoryProps {
   log: LogEntry[];
@@ -23,8 +23,13 @@ function signed(cents: Cents): string {
 }
 
 function titleOf(entry: LogEntry): string {
-  return entry.kind === 'set-aside' ? 'Set aside' : (entry.note ?? 'Correction');
+  if (entry.kind === 'set-aside') return 'Set aside';
+  if (entry.kind === 'paycheck') return `Paycheck arrived · ${formatMonthShort(entry.month)}`;
+  return entry.note ?? 'Correction';
 }
+
+/** Pot movements can be fixed in place; a paycheck is deleted and logged again instead. */
+type MoneyEntry = Exclude<LogEntry, { kind: 'paycheck' }>;
 
 /** Every movement of money in the pot, newest first, each fixable or removable. */
 export function PotHistory({ log, onChangeAmount, onDelete }: PotHistoryProps) {
@@ -40,7 +45,7 @@ export function PotHistory({ log, onChangeAmount, onDelete }: PotHistoryProps) {
     .sort((a, b) => (b.entry.date ?? '').localeCompare(a.entry.date ?? '') || b.index - a.index)
     .map(({ entry }) => entry);
 
-  function save(event: FormEvent<HTMLFormElement>, entry: LogEntry): void {
+  function save(event: FormEvent<HTMLFormElement>, entry: MoneyEntry): void {
     event.preventDefault();
     if (editing === null) return;
     const cents = parseSignedEuros(editing.text);
@@ -83,7 +88,12 @@ export function PotHistory({ log, onChangeAmount, onDelete }: PotHistoryProps) {
                   <p className="expense-details">{when}</p>
                 </div>
 
-                {isEditing ? (
+                {entry.kind === 'paycheck' ? (
+                  // Not money in the pot, so no plus or minus.
+                  <span className="figures log-amount log-amount--neutral">
+                    {entry.amountCents === undefined ? 'no amount' : formatEuros(entry.amountCents)}
+                  </span>
+                ) : isEditing ? (
                   <form className="log-edit" onSubmit={(event) => save(event, entry)} noValidate>
                     <label className="sr-only" htmlFor={`${id}-${entry.id}`}>
                       New amount for {title} (€)
@@ -119,9 +129,11 @@ export function PotHistory({ log, onChangeAmount, onDelete }: PotHistoryProps) {
                 {confirming === entry.id ? (
                   <div className="log-confirm" role="group" aria-label="Confirm delete">
                     <span className="field-hint">
-                      {entry.id === STARTING_BALANCE_ID
-                        ? `Delete? This takes your starting balance of ${formatEuros(entry.amountCents)} out of the pot.`
-                        : 'Delete? The pot and your plan are recalculated without it.'}
+                      {entry.kind === 'paycheck'
+                        ? 'Delete? Your savings period goes back to the paycheck before.'
+                        : entry.id === STARTING_BALANCE_ID
+                          ? `Delete? This takes your starting balance of ${formatEuros(entry.amountCents)} out of the pot.`
+                          : 'Delete? The pot and your plan are recalculated without it.'}
                     </span>
                     <button
                       type="button"
@@ -140,6 +152,7 @@ export function PotHistory({ log, onChangeAmount, onDelete }: PotHistoryProps) {
                 ) : (
                   !isEditing && (
                     <div className="expense-actions">
+                      {entry.kind !== 'paycheck' && (
                       <button
                         type="button"
                         className="button-text"
@@ -155,6 +168,7 @@ export function PotHistory({ log, onChangeAmount, onDelete }: PotHistoryProps) {
                       >
                         Edit
                       </button>
+                      )}
                       <button
                         type="button"
                         className="button-text button-text--danger"

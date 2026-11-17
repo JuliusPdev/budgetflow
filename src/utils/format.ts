@@ -64,8 +64,9 @@ export function formatDayLong(day: Day): string {
  * A paycheck period by its real dates, "21 Oct – 20 Nov". Null with payday on
  * the 1st: periods are then plain calendar months and need no dates.
  */
-export function formatPeriod(month: Month, payday: number): string | null {
-  if (payday === DEFAULT_PAYDAY) return null;
+export function formatPeriod(month: Month, payday: number, realStart?: Day): string | null {
+  if (payday === DEFAULT_PAYDAY && realStart === undefined) return null;
   const { from, to } = paycheckRange(month, payday);
-  return `${formatDayShort(from)} – ${formatDayShort(to)}`;
+  // A paycheck you recorded starts the period on the day it really arrived.
+  return `${formatDayShort(realStart ?? from)} – ${formatDayShort(to)}`;
 }

@@ -27,6 +27,7 @@ const trip: Expense = { id: 'trip', name: 'Made-up trip', targetCents: 50_000, d
 const EMPTY: BudgetData = { envelopes: [], log: [], settings: { payday: 1 } };
 const setAside: LogEntry = { id: 'made-up-entry', kind: 'set-aside', date: '2026-11-16', month: '2026-11', amountCents: 10_000 };
 const correction: LogEntry = { id: 'fix', kind: 'adjustment', amountCents: -2_500, date: '2026-11-17' };
+const paycheck: LogEntry = { id: 'pay', kind: 'paycheck', date: '2026-11-19', month: '2026-11', amountCents: 240_000 };
 
 /** Saved data in an older version, as text. */
 function old(data: Record<string, unknown>): string {
@@ -41,7 +42,7 @@ describe('envelope store', () => {
   it('gives back exactly what was saved', async () => {
     const store = createLocalStore(fakeDrawer());
     const paidTrip: Expense = { ...trip, id: 'paid', paidMonth: '2027-01', dueDate: '2027-03-14' };
-    const data: BudgetData = { envelopes: [trip, paidTrip], log: [setAside, correction], settings: { payday: 21 } };
+    const data: BudgetData = { envelopes: [trip, paidTrip], log: [setAside, correction, paycheck], settings: { payday: 21 } };
     await store.save(data);
     expect(await store.load()).toEqual(data);
   });
@@ -49,7 +50,7 @@ describe('envelope store', () => {
   it('always saves the newest version', async () => {
     const drawer = fakeDrawer();
     await createLocalStore(drawer).save({ envelopes: [trip], log: [], settings: { payday: 1 } });
-    expect(JSON.parse(drawer.contents.get(STORAGE_KEY) ?? '{}').version).toBe(4);
+    expect(JSON.parse(drawer.contents.get(STORAGE_KEY) ?? '{}').version).toBe(5);
   });
 
   it('backs up unreadable data instead of crashing or losing it', async () => {
@@ -65,6 +66,7 @@ describe('envelope store', () => {
       { version: 4, envelopes: [{ ...trip, dueDate: '2027-04-14' }], log: [], settings: { payday: 1 } },
       { version: 4, envelopes: [trip], log: [{ ...setAside, amountCents: -1 }], settings: { payday: 1 } },
       { version: 4, envelopes: [trip], log: [], settings: { payday: 32 } },
+      { version: 5, envelopes: [trip], log: [{ ...paycheck, date: '19 Nov' }], settings: { payday: 1 } },
     ];
     for (const data of bad) {
       const drawer = fakeDrawer({ [STORAGE_KEY]: JSON.stringify(data) });
@@ -129,6 +131,13 @@ describe('switching to one pot (from version 3 and older)', () => {
     const brokenSplit = { id: 'e', kind: 'set-aside', date: '2026-11-16', month: '2026-11', amountCents: 1, split: { trip: 0.5 } };
     expect(parseBackup(old({ version: 2, envelopes: [{ ...trip, savedCents: 0 }], log: [brokenSplit] }))).toBeNull();
     expect(parseBackup(old({ version: 3, envelopes: [trip], log: [], settings: { payday: 1 } }))).toBeNull();
+  });
+});
+
+describe('version 4 (one pot, before paychecks)', () => {
+  it('reads as it was', () => {
+    const data = { envelopes: [trip], log: [setAside], settings: { payday: 21 } };
+    expect(parseBackup(JSON.stringify({ version: 4, ...data }))).toEqual(data);
   });
 });
 

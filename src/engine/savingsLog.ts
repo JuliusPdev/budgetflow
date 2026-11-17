@@ -24,7 +24,11 @@ export function stillOpenThisMonth(monthPlan: MonthPlan | undefined, log: LogEnt
  * already paid out of it. Below zero means more went out than came in.
  */
 export function potCents(expenses: Expense[], log: LogEntry[]): Cents {
-  const intoPot = log.reduce((sum, entry) => sum + entry.amountCents, 0);
+  // Paychecks don't go into the pot; only what you set aside from them does.
+  const intoPot = log.reduce(
+    (sum, entry) => (entry.kind === 'paycheck' ? sum : sum + entry.amountCents),
+    0,
+  );
   const paidOut = expenses
     .filter((expense) => expense.paidMonth !== undefined)
     .reduce((sum, expense) => sum + expense.targetCents, 0);

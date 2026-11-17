@@ -77,7 +77,23 @@ export interface AdjustmentEntry {
   note?: string;
 }
 
-export type LogEntry = SetAsideEntry | AdjustmentEntry;
+/**
+ * Your pay actually arrived. It opens a new savings period on its real date,
+ * instead of the payday you usually expect. It never touches the pot: only what
+ * you set aside from it does.
+ */
+export interface PaycheckEntry {
+  id: string;
+  kind: 'paycheck';
+  /** The day the money arrived. */
+  date: Day;
+  /** Which paycheck this is: the month of the payday it belongs to. */
+  month: Month;
+  /** How much it was, if you entered it. Kept for later; not used in any calculation yet. */
+  amountCents?: Cents;
+}
+
+export type LogEntry = SetAsideEntry | AdjustmentEntry | PaycheckEntry;
 
 /** Your choices that shape the calculation, shared by all your devices. */
 export interface BudgetSettings {
@@ -99,7 +115,8 @@ export interface BudgetData {
  *   2 — plus the savings log (set-asides split across expenses)
  *   3 — plus exact due dates and settings (payday)
  *   4 — one pot: expenses hold no money; the log says what's in the pot
+ *   5 — plus paychecks: when your pay really arrived
  */
 export interface SavedData extends BudgetData {
-  version: 4;
+  version: 5;
 }
