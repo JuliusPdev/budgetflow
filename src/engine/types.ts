@@ -18,11 +18,11 @@ export type Day = string;
 export type Cents = number;
 
 /**
- * One known future one-off expense, and the money set aside for it so far.
- * Only facts are stored here; the monthly share is always recalculated,
- * so it can never go stale or contradict the facts.
+ * One known future one-off expense — only facts you entered. How much of your
+ * savings pot is meant for it is calculated fresh every time (engine/pot.ts),
+ * so deleting or adding an expense re-shares the pot automatically.
  */
-export interface Envelope {
+export interface Expense {
   /** Permanent serial number; stays the same even if the name changes. */
   id: string;
   name: string;
@@ -36,47 +36,48 @@ export interface Envelope {
   /** The exact day, when known. A week is entered as its first day. */
   dueDate?: Day;
   /**
-   * How much you have put toward this expense so far. Paying the bill does
-   * not change this — it only moves money out of the savings account.
-   */
-  savedCents: Cents;
-  /**
-   * The month the bill was actually paid; empty means not paid yet.
-   * Paying before the envelope is full borrows the gap from savings,
-   * which the plan then repays by `dueMonth`.
+   * The month the bill was actually paid; empty means not paid yet. A paid
+   * bill has left the pot. Paid before its due month, the plan refills the pot by then.
    */
   paidMonth?: Month;
 }
 
-/** An envelope's own details, without its id — what a form edits. */
-export type EnvelopeFields = Omit<Envelope, 'id'>;
+/** An expense's own details, without its id — what a form edits. */
+export type ExpenseFields = Omit<Expense, 'id'>;
 
 /**
- * Money moved into savings, and exactly how it was split across envelopes —
- * remembered so that deleting the entry can undo precisely what it did.
+ * An expense together with its current share of the pot — what the planning
+ * engine and the screens work with. Never stored: shares change with every change.
  */
+export interface Envelope extends Expense {
+  /** How much of the pot is meant for this expense right now. */
+  savedCents: Cents;
+}
+
+/** Money you moved into savings. */
 export interface SetAsideEntry {
   id: string;
   kind: 'set-aside';
   date: Day;
+  /** The paycheck period it belongs to. */
   month: Month;
   amountCents: Cents;
-  /** Cents added to each envelope, by envelope id. */
-  split: Record<string, Cents>;
 }
 
-/** Money taken out for something unplanned, recorded as a loan envelope to repay. */
-export interface WithdrawalEntry {
+/**
+ * A correction to what's in the pot, so it matches your real savings account —
+ * also how the pot started when BudgetFlow switched to one pot. Can be negative.
+ */
+export interface AdjustmentEntry {
   id: string;
-  kind: 'withdrawal';
-  date: Day;
-  month: Month;
+  kind: 'adjustment';
   amountCents: Cents;
-  /** The loan envelope this withdrawal created. */
-  envelopeId: string;
+  /** When you made the correction; the starting balance has none. */
+  date?: Day;
+  note?: string;
 }
 
-export type LogEntry = SetAsideEntry | WithdrawalEntry;
+export type LogEntry = SetAsideEntry | AdjustmentEntry;
 
 /** Your choices that shape the calculation, shared by all your devices. */
 export interface BudgetSettings {
@@ -84,9 +85,9 @@ export interface BudgetSettings {
   payday: number;
 }
 
-/** Everything about your budget: the envelopes, the log of what you did, and your settings. */
+/** Everything about your budget: your expenses, the log of money in and out, and your settings. */
 export interface BudgetData {
-  envelopes: Envelope[];
+  envelopes: Expense[];
   log: LogEntry[];
   settings: BudgetSettings;
 }
@@ -94,10 +95,11 @@ export interface BudgetData {
 /**
  * Everything BudgetFlow saves. The version number lets the app recognize data
  * written in an older shape and convert it instead of crashing:
- *   1 — envelopes only (read as an empty log)
- *   2 — envelopes and the savings log
+ *   1 — expenses only, each holding its own saved money
+ *   2 — plus the savings log (set-asides split across expenses)
  *   3 — plus exact due dates and settings (payday)
+ *   4 — one pot: expenses hold no money; the log says what's in the pot
  */
 export interface SavedData extends BudgetData {
-  version: 3;
+  version: 4;
 }

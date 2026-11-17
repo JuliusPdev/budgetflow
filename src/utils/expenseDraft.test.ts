@@ -30,7 +30,6 @@ describe('validateDraft', () => {
     dueMode: 'month',
     dueMonth: '2027-03',
     dueDate: '',
-    saved: '',
     isPaid: false,
     paidMonth: '2026-11',
   };
@@ -43,7 +42,6 @@ describe('validateDraft', () => {
         targetCents: 25_000,
         dueMonth: '2027-03',
         dueDate: undefined,
-        savedCents: 0,
         paidMonth: undefined,
       },
     });
@@ -55,14 +53,13 @@ describe('validateDraft', () => {
   });
 
   it('explains every problem, per field', () => {
-    const result = validateDraft({ ...good, name: ' ', amount: '0', dueMonth: '', saved: '300' });
+    const result = validateDraft({ ...good, name: ' ', amount: '0', dueMonth: '' });
     expect(result).toEqual({
       ok: false,
       errors: {
         name: 'Give this expense a name',
         amount: 'Enter an amount like 900 or 899.50',
         dueMonth: "Pick the month it's due, like 2027-01",
-        saved: "Saved can't be more than the amount",
       },
     });
   });
@@ -73,7 +70,6 @@ describe('validateDraft', () => {
       targetCents: 89_950,
       dueMonth: '2027-01',
       dueDate: '2027-01-28',
-      savedCents: 30_000,
       paidMonth: '2026-11',
     };
     expect(validateDraft(draftFrom(existing, '2026-11'))).toEqual({ ok: true, fields: existing });

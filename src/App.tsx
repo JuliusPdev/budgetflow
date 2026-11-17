@@ -6,9 +6,11 @@ import { LedgerColumns, LedgerRows } from './components/Ledger';
 import { SyncPanel } from './components/SyncPanel';
 import { ThisMonth } from './components/ThisMonth';
 import { dayOfDate, monthOfDate } from './engine/months';
-import { planSetAside } from './engine/plan';
-import { envelopesAtMonthStart, stillOpenThisMonth } from './engine/savingsLog';
+import { planFromPot, sharePot, withShares } from './engine/pot';
+import { potAtPeriodStart, potCents, stillOpenThisMonth } from './engine/savingsLog';
 import { DEFAULT_PAYDAY, paycheckDates, paycheckMonthOf, planningView } from './engine/timing';
+import type { LogEntry } from './engine/types';
+import { PotPanel } from './components/PotPanel';
 import { MonthProgress } from './components/MonthProgress';
 import { PaydaySettings } from './components/PaydaySettings';
 import { useAccount } from './hooks/useAccount';
@@ -44,6 +46,7 @@ export default function App() {
     restoreEnvelope,
     log,
     logSetAside,
+    correctPot,
     deleteLogEntry,
     settings,
     setPayday,
@@ -75,16 +78,29 @@ export default function App() {
     () => (showingExample ? sampleEnvelopes(calendarMonth) : savedEnvelopes),
     [showingExample, savedEnvelopes, calendarMonth],
   );
-  // Examples have no log. Planning from the month's start keeps this month's
-  // amount fixed while you log set-asides against it.
-  const activeLog = useMemo(() => (showingExample ? [] : log), [showingExample, log]);
-  const plan = useMemo(
+  // Examples have no log: their made-up saved amounts become a made-up pot.
+  // Your own pot comes from your log.
+  const activeLog = useMemo<LogEntry[]>(
     () =>
-      planSetAside(
-        envelopesAtMonthStart(planningView(envelopes, settings.payday), activeLog, currentPaycheck),
-        currentPaycheck,
-      ),
-    [envelopes, activeLog, currentPaycheck, settings.payday],
+      showingExample
+        ? [{ id: 'example', kind: 'adjustment', amountCents: sampleEnvelopes(calendarMonth).reduce((sum, sample) => sum + sample.savedCents, 0) }]
+        : log,
+    [showingExample, log, calendarMonth],
+  );
+  const pot = potCents(envelopes, activeLog);
+  // The engine plans in paychecks; the screens show your real dates.
+  const planningExpenses = useMemo(() => planningView(envelopes, settings.payday), [envelopes, settings.payday]);
+  // Planning from the pot as it was when this period started keeps its amount
+  // fixed while you log set-asides against it.
+  const plan = useMemo(
+    () => planFromPot(planningExpenses, potAtPeriodStart(envelopes, activeLog, currentPaycheck), currentPaycheck),
+    [planningExpenses, envelopes, activeLog, currentPaycheck],
+  );
+  // What the pot holds right now for each expense.
+  const potShares = useMemo(() => sharePot(pot, planningExpenses, currentPaycheck), [pot, planningExpenses, currentPaycheck]);
+  const shownEnvelopes = useMemo(
+    () => withShares(envelopes, potShares, currentPaycheck),
+    [envelopes, potShares, currentPaycheck],
   );
 
   // Columns suit a wide screen, rows a phone — unless the user picks one.
@@ -130,7 +146,7 @@ export default function App() {
             ) : (
               <ThisMonth
                 monthPlan={plan[0]}
-                envelopes={envelopes}
+                envelopes={shownEnvelopes}
                 isExample={showingExample}
                 paycheckLabel={paycheckLabel}
                 today={dayOfDate(new Date())}
@@ -139,7 +155,6 @@ export default function App() {
                 {!showingExample && plan[0] !== undefined && (
                   <MonthProgress
                     monthPlan={plan[0]}
-                    envelopes={envelopes}
                     log={log}
                     today={dayOfDate(new Date())}
                     periodName={periodName}
@@ -178,15 +193,26 @@ export default function App() {
                 </p>
               )}
               {layout === 'columns' ? (
-                <LedgerColumns plan={plan} envelopes={envelopes} payday={settings.payday} />
+                <LedgerColumns plan={plan} envelopes={shownEnvelopes} payday={settings.payday} />
               ) : (
-                <LedgerRows plan={plan} envelopes={envelopes} payday={settings.payday} />
+                <LedgerRows plan={plan} envelopes={shownEnvelopes} payday={settings.payday} />
               )}
             </section>
           )}
 
+          {!showingExample && !listIsEmpty && (
+            <PotPanel
+              potCents={pot}
+              potShares={potShares}
+              log={log}
+              onCorrect={(actualCents) => correctPot(actualCents, pot, dayOfDate(new Date()))}
+              onUndo={deleteLogEntry}
+            />
+          )}
+
           <ExpenseList
             envelopes={savedEnvelopes}
+            sharesById={potShares.shares}
             currentMonth={calendarMonth}
             payday={settings.payday}
             onAdd={addEnvelope}

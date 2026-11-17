@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createVaultKey, sealText, type VaultKey } from '../crypto/vault';
-import type { BudgetData, Envelope } from '../engine/types';
+import type { BudgetData, Expense } from '../engine/types';
 import { serializeBackup } from '../storage/envelopeStore';
 import {
   checkNewPassphrase,
@@ -18,11 +18,11 @@ import {
 const FAST = 1_000;
 const PASSPHRASE = 'made-up quiet harbour lantern';
 
-const trip: Envelope = { id: 'trip', name: 'Made-up trip', targetCents: 50_000, dueMonth: '2027-03', savedCents: 0 };
-const tyres: Envelope = { id: 'tyres', name: 'Made-up tyres', targetCents: 40_000, dueMonth: '2027-02', savedCents: 0 };
+const trip: Expense = { id: 'trip', name: 'Made-up trip', targetCents: 50_000, dueMonth: '2027-03' };
+const tyres: Expense = { id: 'tyres', name: 'Made-up tyres', targetCents: 40_000, dueMonth: '2027-02' };
 
 /** A budget with these expenses and an empty savings log. */
-function budget(...envelopes: Envelope[]): BudgetData {
+function budget(...envelopes: Expense[]): BudgetData {
   return { envelopes, log: [], settings: { payday: 1 } };
 }
 
@@ -65,7 +65,7 @@ describe('passphrase rules', () => {
 describe('fingerprint', () => {
   it('is the same for the same list and different after any change', async () => {
     expect(await fingerprint(budget(trip))).toBe(await fingerprint(budget({ ...trip })));
-    expect(await fingerprint(budget(trip))).not.toBe(await fingerprint(budget({ ...trip, savedCents: 1 })));
+    expect(await fingerprint(budget(trip))).not.toBe(await fingerprint(budget({ ...trip, targetCents: 50_001 })));
   });
 });
 
@@ -167,7 +167,7 @@ describe('unreadable synced copies', () => {
   });
 
   it('never calls a copy from a newer BudgetFlow damaged', async () => {
-    const { vaultKey, record } = await serverHolding('{"version":4,"somethingNew":[]}');
+    const { vaultKey, record } = await serverHolding('{"version":5,"somethingNew":[]}');
     expect(await decideStart(record, vaultKey, budget(trip), null)).toEqual({ kind: 'newer-app' });
   });
 

@@ -1,15 +1,13 @@
 import { useId, useState, type FormEvent } from 'react';
 import type { MonthPlan } from '../engine/plan';
-import { setAsideInMonth, splitSetAside, stillOpenThisMonth } from '../engine/savingsLog';
-import type { Cents, Day, Envelope, LogEntry, SetAsideEntry } from '../engine/types';
+import { setAsideInMonth, stillOpenThisMonth } from '../engine/savingsLog';
+import type { Cents, Day, LogEntry, SetAsideEntry } from '../engine/types';
 import { centsToInputText, parseEurosToCents } from '../utils/expenseDraft';
 import { formatEuros } from '../utils/format';
 
 interface MonthProgressProps {
   /** This month's plan, calculated from where things stood at the start of the month. */
   monthPlan: MonthPlan;
-  /** Your envelopes as they are now, including this month's set-asides. */
-  envelopes: Envelope[];
   log: LogEntry[];
   today: Day;
   /** How to name this period in sentences: a month ("November") or "this savings phase". */
@@ -19,7 +17,7 @@ interface MonthProgressProps {
 }
 
 /** How much of this month's plan you've actually set aside, and a way to log more. */
-export function MonthProgress({ monthPlan, envelopes, log, today, periodName, onLog, onUndo }: MonthProgressProps) {
+export function MonthProgress({ monthPlan, log, today, periodName, onLog, onUndo }: MonthProgressProps) {
   const loggedCents = setAsideInMonth(log, monthPlan.month);
   const openCents = stillOpenThisMonth(monthPlan, log);
 
@@ -33,14 +31,9 @@ export function MonthProgress({ monthPlan, envelopes, log, today, periodName, on
   );
   const fieldId = useId();
 
-  // The same split that logging will use, so the preview is exactly what you'll get.
   const amountCents = parseEurosToCents(amountText);
-  const preview =
-    amountCents !== null && amountCents > 0 ? splitSetAside(amountCents, monthPlan, envelopes, log) : null;
-
-  function nameOf(id: string): string {
-    return envelopes.find((envelope) => envelope.id === id)?.name ?? 'Removed expense';
-  }
+  // More than this period needs isn't wasted: it stays in the pot and lowers what comes next.
+  const extraCents = amountCents !== null ? Math.max(0, amountCents - openCents) : 0;
 
   function handleSubmit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
@@ -48,8 +41,7 @@ export function MonthProgress({ monthPlan, envelopes, log, today, periodName, on
       setError('Enter an amount like 240 or 239.50');
       return;
     }
-    const { split, extraCents } = splitSetAside(amountCents, monthPlan, envelopes, log);
-    const id = onLog({ date: today, month: monthPlan.month, amountCents, split });
+    const id = onLog({ date: today, month: monthPlan.month, amountCents });
     setLastLogged({ id, amountCents, extraCents });
     setTypedText(null);
     setError(null);
@@ -113,13 +105,10 @@ export function MonthProgress({ monthPlan, envelopes, log, today, periodName, on
                 {error}
               </p>
             )}
-            {preview !== null && (
+            {extraCents > 0 && (
               <p className="field-hint">
-                Splits into:{' '}
-                {Object.entries(preview.split)
-                  .map(([id, cents]) => `${nameOf(id)} ${formatEuros(cents)}`)
-                  .join(' · ')}
-                {preview.extraCents > 0 && ` · ${formatEuros(preview.extraCents)} extra in the pot`}
+                {formatEuros(extraCents)} more than this period needs. It stays in the pot and lowers your next
+                set-asides.
               </p>
             )}
           </div>
@@ -127,12 +116,12 @@ export function MonthProgress({ monthPlan, envelopes, log, today, periodName, on
       </form>
 
       <div aria-live="polite">
-        {lastLogged !== null && (
+        {lastLogged !== null && log.some((entry) => entry.id === lastLogged.id) && (
           <p className="undo-bar">
             <span>
               Logged {formatEuros(lastLogged.amountCents)} for {periodName}.
               {lastLogged.extraCents > 0 &&
-                ` ${formatEuros(lastLogged.extraCents)} more than your expenses need right now; it stays in the pot as extra.`}
+                ` ${formatEuros(lastLogged.extraCents)} of it lowers your next set-asides.`}
             </span>
             <button type="button" className="button-text" onClick={handleUndo}>
               Undo

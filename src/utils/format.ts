@@ -1,5 +1,5 @@
 import { DEFAULT_PAYDAY, paycheckRange } from '../engine/timing';
-import type { Cents, Day, Envelope, Month } from '../engine/types';
+import type { Cents, Day, Expense, Month } from '../engine/types';
 
 // Turns engine values (whole cents, "2026-11") into text people read.
 // Done only at display time, so the engine never deals with rounding or wording.
@@ -42,7 +42,7 @@ export function formatDayShort(day: Day): string {
 }
 
 /** When an expense is due, as precisely as it was entered: "5 Dec 2026" or "Dec 2026". */
-export function formatDue(envelope: Envelope): string {
+export function formatDue(envelope: Expense): string {
   return envelope.dueDate === undefined
     ? formatMonthShort(envelope.dueMonth)
     : dayWithYearFormat.format(dayToDate(envelope.dueDate));

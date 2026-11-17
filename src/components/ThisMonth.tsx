@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { loanCents, type MonthPlan } from '../engine/plan';
+import { REFILL_ID } from '../engine/pot';
 import type { Cents, Day, Envelope } from '../engine/types';
 import { formatDayLong, formatDue, formatEuros, formatMonthShort } from '../utils/format';
 
@@ -108,7 +109,9 @@ function GoalLine({ envelope, shareCents }: GoalLineProps) {
 
   // A paid-early goal tells the repayment story instead of the saving story.
   const detail =
-    envelope.paidMonth !== undefined && loan > 0
+    envelope.id === REFILL_ID
+      ? 'More went out of your pot than came in. This puts it back first.'
+      : envelope.paidMonth !== undefined && loan > 0
       ? `Paid ${formatMonthShort(envelope.paidMonth)} · repaying ${formatEuros(loan)} by ${formatDue(envelope)}`
       : `${formatEuros(envelope.savedCents)} of ${formatEuros(envelope.targetCents)} · due ${formatDue(envelope)}`;
 

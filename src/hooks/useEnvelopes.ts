@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
-import { applySplit } from '../engine/savingsLog';
 import { DEFAULT_PAYDAY } from '../engine/timing';
-import type { BudgetData, Envelope, EnvelopeFields, SetAsideEntry } from '../engine/types';
+import type { AdjustmentEntry, BudgetData, Cents, Day, Expense, ExpenseFields, SetAsideEntry } from '../engine/types';
 import type { EnvelopeStore } from '../storage/envelopeStore';
 
 /**
@@ -44,18 +43,18 @@ export function useEnvelopes(store: EnvelopeStore) {
     );
   }, [data, isLoading, store]);
 
-  /** Changes only the envelopes, leaving the log as it is. */
-  function changeEnvelopes(change: (current: Envelope[]) => Envelope[]): void {
+  /** Changes only the expenses, leaving the log as it is. */
+  function changeEnvelopes(change: (current: Expense[]) => Expense[]): void {
     setData((current) => ({ ...current, envelopes: change(current.envelopes) }));
   }
 
-  function addEnvelope(fields: EnvelopeFields): void {
+  function addEnvelope(fields: ExpenseFields): void {
     // Created outside the update so a re-run update can't hand out a second id.
-    const envelope: Envelope = { ...fields, id: crypto.randomUUID() };
+    const envelope: Expense = { ...fields, id: crypto.randomUUID() };
     changeEnvelopes((current) => [...current, envelope]);
   }
 
-  function updateEnvelope(id: string, changes: Partial<EnvelopeFields>): void {
+  function updateEnvelope(id: string, changes: Partial<ExpenseFields>): void {
     changeEnvelopes((current) =>
       current.map((envelope) => (envelope.id === id ? { ...envelope, ...changes } : envelope)),
     );
@@ -66,33 +65,40 @@ export function useEnvelopes(store: EnvelopeStore) {
   }
 
   /** Puts a deleted envelope back where it was — the Undo after a delete. */
-  function restoreEnvelope(envelope: Envelope, index: number): void {
+  function restoreEnvelope(envelope: Expense, index: number): void {
     changeEnvelopes((current) => [...current.slice(0, index), envelope, ...current.slice(index)]);
   }
 
-  /**
-   * Records money you set aside and adds its split to the envelopes — in one
-   * step, so the log and the envelopes can never disagree. Returns the entry's id.
-   */
+  /** Records money you moved into savings. Returns the entry's id, for Undo. */
   function logSetAside(details: Omit<SetAsideEntry, 'id' | 'kind'>): string {
     // Created outside the update so a re-run update can't hand out a second id.
     const entry: SetAsideEntry = { ...details, id: crypto.randomUUID(), kind: 'set-aside' };
-    setData((current) => ({
-      ...current,
-      envelopes: applySplit(current.envelopes, entry.split, 1),
-      log: [...current.log, entry],
-    }));
+    setData((current) => ({ ...current, log: [...current.log, entry] }));
     return entry.id;
   }
 
-  /** Removes a log entry and reverses exactly what it did to the envelopes. */
+  /**
+   * Makes the pot match your real savings: records the difference between
+   * what BudgetFlow thinks is there and what you say is there. Returns the
+   * entry's id for Undo, or null when nothing needed changing.
+   */
+  function correctPot(actualCents: Cents, currentPotCents: Cents, today: Day): string | null {
+    const differenceCents = actualCents - currentPotCents;
+    if (differenceCents === 0) return null;
+    const entry: AdjustmentEntry = {
+      id: crypto.randomUUID(),
+      kind: 'adjustment',
+      amountCents: differenceCents,
+      date: today,
+      note: 'Correction',
+    };
+    setData((current) => ({ ...current, log: [...current.log, entry] }));
+    return entry.id;
+  }
+
+  /** Removes a log entry. Nothing else to undo: the pot is always recalculated from the log. */
   function deleteLogEntry(id: string): void {
-    setData((current) => {
-      const entry = current.log.find((candidate) => candidate.id === id);
-      if (entry === undefined) return current;
-      const envelopes = entry.kind === 'set-aside' ? applySplit(current.envelopes, entry.split, -1) : current.envelopes;
-      return { ...current, envelopes, log: current.log.filter((candidate) => candidate.id !== id) };
-    });
+    setData((current) => ({ ...current, log: current.log.filter((entry) => entry.id !== id) }));
   }
 
   /** The day of the month your pay usually arrives. */
@@ -117,6 +123,7 @@ export function useEnvelopes(store: EnvelopeStore) {
     removeEnvelope,
     restoreEnvelope,
     logSetAside,
+    correctPot,
     deleteLogEntry,
     settings: data.settings,
     setPayday,

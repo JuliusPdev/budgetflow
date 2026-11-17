@@ -1,18 +1,20 @@
 import { useState } from 'react';
-import type { Envelope, EnvelopeFields, Month } from '../engine/types';
+import type { Cents, Expense, ExpenseFields, Month } from '../engine/types';
 import { fundingMonth, DEFAULT_PAYDAY } from '../engine/timing';
 import { formatDue, formatEuros, formatMonthShort } from '../utils/format';
 import { ExpenseForm } from './ExpenseForm';
 
 interface ExpenseListProps {
-  envelopes: Envelope[];
+  envelopes: Expense[];
+  /** Each expense's current share of the pot, by id. */
+  sharesById: Record<string, Cents>;
   currentMonth: Month;
   /** Day of the month pay arrives. */
   payday: number;
-  onAdd: (fields: EnvelopeFields) => void;
-  onUpdate: (id: string, fields: EnvelopeFields) => void;
+  onAdd: (fields: ExpenseFields) => void;
+  onUpdate: (id: string, fields: ExpenseFields) => void;
   onRemove: (id: string) => void;
-  onRestore: (envelope: Envelope, index: number) => void;
+  onRestore: (envelope: Expense, index: number) => void;
   /** Which form is open: an envelope id, NEW_EXPENSE, or null. One at a time. */
   openForm: string | null;
   onOpenFormChange: (formKey: string | null) => void;
@@ -24,6 +26,7 @@ export const NEW_EXPENSE = 'new';
 /** Your known future expenses: add, edit in place, delete with undo. */
 export function ExpenseList({
   envelopes,
+  sharesById,
   currentMonth,
   payday,
   onAdd,
@@ -33,7 +36,7 @@ export function ExpenseList({
   openForm,
   onOpenFormChange,
 }: ExpenseListProps) {
-  const [lastDeleted, setLastDeleted] = useState<{ envelope: Envelope; index: number } | null>(null);
+  const [lastDeleted, setLastDeleted] = useState<{ envelope: Expense; index: number } | null>(null);
 
   const byDueMonth = [...envelopes].sort(
     (a, b) => a.dueMonth.localeCompare(b.dueMonth) || a.name.localeCompare(b.name),
@@ -44,7 +47,7 @@ export function ExpenseList({
     setLastDeleted(null);
   }
 
-  function handleDelete(envelope: Envelope): void {
+  function handleDelete(envelope: Expense): void {
     // Remember its position in the saved list, so Undo restores it exactly.
     const index = envelopes.findIndex((candidate) => candidate.id === envelope.id);
     onRemove(envelope.id);
@@ -103,6 +106,7 @@ export function ExpenseList({
               <ExpenseRow
                 key={envelope.id}
                 envelope={envelope}
+                shareCents={sharesById[envelope.id]}
                 onEdit={() => openFormFor(envelope.id)}
                 onDelete={() => handleDelete(envelope)}
                 payday={payday}
@@ -135,18 +139,20 @@ export function ExpenseList({
 }
 
 interface ExpenseRowProps {
-  envelope: Envelope;
+  envelope: Expense;
+  /** Its share of the pot; missing once it's paid and settled. */
+  shareCents: Cents | undefined;
   payday: number;
   onEdit: () => void;
   onDelete: () => void;
 }
 
-function ExpenseRow({ envelope, payday, onEdit, onDelete }: ExpenseRowProps) {
+function ExpenseRow({ envelope, shareCents, payday, onEdit, onDelete }: ExpenseRowProps) {
   const details = [
     formatEuros(envelope.targetCents),
     `due ${formatDue(envelope)}`,
     ...(payday === DEFAULT_PAYDAY ? [] : [`from your ${formatMonthShort(fundingMonth(envelope, payday))} paycheck`]),
-    `${formatEuros(envelope.savedCents)} saved`,
+    ...(shareCents === undefined ? [] : [`${formatEuros(shareCents)} of it in the pot`]),
   ];
   if (envelope.paidMonth !== undefined) details.push(`paid ${formatMonthShort(envelope.paidMonth)}`);
 

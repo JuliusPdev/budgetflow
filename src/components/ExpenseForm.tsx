@@ -1,6 +1,6 @@
 import { useId, useRef, useState, type FormEvent } from 'react';
 import { DEFAULT_PAYDAY, fundingMonth } from '../engine/timing';
-import type { EnvelopeFields, Month } from '../engine/types';
+import type { ExpenseFields, Month } from '../engine/types';
 import { formatMonthLong } from '../utils/format';
 import {
   DRAFT_FIELD_ORDER,
@@ -13,12 +13,12 @@ import {
 
 interface ExpenseFormProps {
   /** The expense being edited; leave out to add a new one. */
-  initial?: EnvelopeFields;
+  initial?: ExpenseFields;
   currentMonth: Month;
   /** Day of the month pay arrives, to show which paycheck covers the expense. */
   payday: number;
   submitLabel: string;
-  onSave: (fields: EnvelopeFields) => void;
+  onSave: (fields: ExpenseFields) => void;
   onCancel: () => void;
 }
 
@@ -72,7 +72,7 @@ export function ExpenseForm({ initial, currentMonth, payday, submitLabel, onSave
     const timing = isDay
       ? { dueMonth: draft.dueDate.slice(0, 7), dueDate: draft.dueDate }
       : { dueMonth: draft.dueMonth };
-    return formatMonthLong(fundingMonth({ id: '', name: '', targetCents: 0, savedCents: 0, ...timing }, payday));
+    return formatMonthLong(fundingMonth({ id: '', name: '', targetCents: 0, ...timing }, payday));
   }
 
   function errorFor(field: DraftField) {
@@ -159,20 +159,6 @@ export function ExpenseForm({ initial, currentMonth, payday, submitLabel, onSave
         )}
       </fieldset>
 
-      <div className="field">
-        <label htmlFor={fieldId('saved')}>Already saved (€)</label>
-        <input
-          {...inputProps('saved')}
-          type="text"
-          inputMode="decimal"
-          placeholder="0"
-          value={draft.saved}
-          onChange={(event) => setField('saved', event.target.value)}
-        />
-        <p className="field-hint">Money you've already put aside for this</p>
-        {errorFor('saved')}
-      </div>
-
       <div className="field field--wide">
         <label className="checkbox">
           <input
@@ -183,7 +169,7 @@ export function ExpenseForm({ initial, currentMonth, payday, submitLabel, onSave
           <span>Already paid</span>
         </label>
         <p className="field-hint">
-          Paid before it was fully saved? The gap counts as a loan from your savings, repaid by the due month.
+          Paid already? The bill has left your savings pot. Paid before its due month, the plan refills the pot by then.
         </p>
       </div>
 

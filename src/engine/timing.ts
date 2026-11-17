@@ -1,5 +1,5 @@
 import { addMonths } from './months';
-import type { Day, Envelope, Month } from './types';
+import type { Day, Expense, Month } from './types';
 
 // Paychecks, not calendar months. Each month's set-aside comes from that month's
 // paycheck, so what matters for an expense is the last paycheck that arrives
@@ -31,7 +31,7 @@ export function paycheckMonthOf(day: Day, payday: number): Month {
 }
 
 /** The last paycheck that can still pay for an expense. */
-export function fundingMonth(envelope: Envelope, payday: number): Month {
+export function fundingMonth(envelope: Expense, payday: number): Month {
   return paycheckMonthOf(envelope.dueDate ?? `${envelope.dueMonth}-01`, payday);
 }
 
@@ -40,7 +40,7 @@ export function fundingMonth(envelope: Envelope, payday: number): Month {
  * paid month) becomes the paycheck it belongs to. Your real dates are untouched;
  * this copy is only for calculating.
  */
-export function planningView(envelopes: Envelope[], payday: number): Envelope[] {
+export function planningView<T extends Expense>(envelopes: T[], payday: number): T[] {
   if (payday === DEFAULT_PAYDAY) return envelopes;
   return envelopes.map((envelope) => ({
     ...envelope,
