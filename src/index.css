@@ -859,6 +859,65 @@ ol {
   flex: 1 1 8rem;
 }
 
+.log-history {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--ink);
+}
+
+.log-entry {
+  flex-wrap: wrap;
+}
+
+.log-entry .expense-text {
+  flex: 1 1 10rem;
+}
+
+.log-amount {
+  white-space: nowrap;
+}
+
+.log-amount--in {
+  color: var(--green);
+}
+
+.log-amount--out {
+  color: var(--terracotta);
+}
+
+.log-edit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.log-edit input {
+  width: 7rem;
+  min-height: 44px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 1rem;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.log-edit .field-error {
+  flex-basis: 100%;
+}
+
+.log-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-1);
+  flex-basis: 100%;
+}
+
 /* ─── Sync ────────────────────────────────────────────────────────────────── */
 
 .sync,

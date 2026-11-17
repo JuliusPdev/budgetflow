@@ -3,6 +3,7 @@ import type { PotShares } from '../engine/pot';
 import type { Cents, LogEntry } from '../engine/types';
 import { centsToInputText, parseEurosToCents } from '../utils/expenseDraft';
 import { formatEuros } from '../utils/format';
+import { PotHistory } from './PotHistory';
 
 interface PotPanelProps {
   potCents: Cents;
@@ -11,10 +12,12 @@ interface PotPanelProps {
   /** Makes the pot match what you say is really there. Returns the new entry's id, or null if nothing changed. */
   onCorrect: (actualCents: Cents) => string | null;
   onUndo: (entryId: string) => void;
+  onChangeAmount: (entryId: string, amountCents: Cents) => void;
+  onDelete: (entryId: string) => void;
 }
 
 /** What's in your savings pot, what it's meant for, and a way to correct it. */
-export function PotPanel({ potCents, potShares, log, onCorrect, onUndo }: PotPanelProps) {
+export function PotPanel({ potCents, potShares, log, onCorrect, onUndo, onChangeAmount, onDelete }: PotPanelProps) {
   const id = useId();
   const [isCorrecting, setIsCorrecting] = useState(false);
   const [amountText, setAmountText] = useState('');
@@ -128,6 +131,8 @@ export function PotPanel({ potCents, potShares, log, onCorrect, onUndo }: PotPan
           Correct the balance
         </button>
       )}
+
+      <PotHistory log={log} onChangeAmount={onChangeAmount} onDelete={onDelete} />
     </section>
   );
 }

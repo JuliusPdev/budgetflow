@@ -47,6 +47,7 @@ export default function App() {
     log,
     logSetAside,
     correctPot,
+    changeLogAmount,
     deleteLogEntry,
     settings,
     setPayday,
@@ -207,6 +208,8 @@ export default function App() {
               log={log}
               onCorrect={(actualCents) => correctPot(actualCents, pot, dayOfDate(new Date()))}
               onUndo={deleteLogEntry}
+              onChangeAmount={changeLogAmount}
+              onDelete={deleteLogEntry}
             />
           )}
 

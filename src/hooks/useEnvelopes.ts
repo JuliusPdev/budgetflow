@@ -96,6 +96,17 @@ export function useEnvelopes(store: EnvelopeStore) {
     return entry.id;
   }
 
+  /**
+   * Fixes the amount of a log entry, e.g. a set-aside typed wrong. The pot is
+   * recalculated from the log, so nothing else needs adjusting.
+   */
+  function changeLogAmount(id: string, amountCents: Cents): void {
+    setData((current) => ({
+      ...current,
+      log: current.log.map((entry) => (entry.id === id ? { ...entry, amountCents } : entry)),
+    }));
+  }
+
   /** Removes a log entry. Nothing else to undo: the pot is always recalculated from the log. */
   function deleteLogEntry(id: string): void {
     setData((current) => ({ ...current, log: current.log.filter((entry) => entry.id !== id) }));
@@ -124,6 +135,7 @@ export function useEnvelopes(store: EnvelopeStore) {
     restoreEnvelope,
     logSetAside,
     correctPot,
+    changeLogAmount,
     deleteLogEntry,
     settings: data.settings,
     setPayday,
