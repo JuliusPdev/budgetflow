@@ -56,3 +56,14 @@ export function periodMovements(log: LogEntry[], month: Month, periodStart: Day)
 export function potAtPeriodStart(expenses: Expense[], log: LogEntry[], month: Month, periodStart: Day): Cents {
   return potCents(expenses, log) - periodMovements(log, month, periodStart).netCents;
 }
+
+/**
+ * Where "as if you had always followed your plan" starts: the paycheck of your
+ * first set-aside, or the current one before you've logged any.
+ */
+export function planOrigin(log: LogEntry[], currentMonth: Month): Month {
+  return log.reduce(
+    (earliest, entry) => (entry.kind === 'set-aside' && entry.month < earliest ? entry.month : earliest),
+    currentMonth,
+  );
+}

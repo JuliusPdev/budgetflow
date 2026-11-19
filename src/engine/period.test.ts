@@ -55,3 +55,22 @@ describe('the current period', () => {
     expect(december.plan.map((month) => month.totalCents)).toEqual([52_000, 30_000, 30_000]);
   });
 });
+
+describe('how the pot is shared', () => {
+  it('follows the plan while that asks nothing extra', () => {
+    // €300 set aside in November, now December: following the plan still asks €273.33.
+    const december = periodStatus(expenses, [setAside300], '2026-12', '2026-12-21');
+    expect(december.rule).toBe('plan');
+    expect(december.plan.map((month) => month.totalCents)).toEqual([27_334, 27_333, 27_333]);
+    // The ledger split follows the plan too: the December bills get the rest they still need.
+    expect(december.plan[0].byEnvelope.presents).toBe(30_000 - 16_072);
+  });
+
+  it('covers the closest deadlines first when you are behind and it matters', () => {
+    // Only €100 in November: following the plan would ask €427 in December instead of €420.
+    const short: LogEntry = { ...setAside300, amountCents: 10_000 };
+    const december = periodStatus(expenses, [short], '2026-12', '2026-12-21');
+    expect(december.rule).toBe('closest');
+    expect(december.plan.map((month) => month.totalCents)).toEqual([42_000, 30_000, 30_000]);
+  });
+});

@@ -82,6 +82,59 @@ export function withShares(envelopes: Expense[], potShares: PotShares, currentMo
   return [...shared, refill];
 }
 
+/**
+ * Shares the pot out as if you had always followed your plan: a reference plan
+ * made from `origin` (your first set-aside's paycheck) with an empty pot says
+ * how each paycheck would be split, and the pot is poured into it paycheck by
+ * paycheck. A paycheck only partly covered is split in its own proportions.
+ *
+ * The reference starts at a fixed point, so shares keep growing in the same
+ * pattern from one paycheck to the next instead of jumping. Expenses paid
+ * early take part until their due month, like in `sharePot`.
+ */
+export function sharePotByPlan(
+  potCents: Cents,
+  envelopes: Expense[],
+  origin: Month,
+  currentMonth: Month,
+): PotShares {
+  const sharing = envelopes.filter((envelope) => takesPart(envelope, currentMonth));
+  const paidEarlyCents = sharing
+    .filter((envelope) => envelope.paidMonth !== undefined)
+    .reduce((sum, envelope) => sum + envelope.targetCents, 0);
+  let left = potCents + paidEarlyCents;
+  const shares: Record<string, Cents> = Object.fromEntries(sharing.map((envelope) => [envelope.id, 0]));
+  if (left <= 0) return { shares, extraCents: 0, shortfallCents: Math.max(0, -left) };
+
+  // Every expense as if nothing were saved or paid yet, planned from the origin.
+  const reference = planSetAside(
+    sharing.map((envelope) => ({ ...envelope, paidMonth: undefined, savedCents: 0 })),
+    origin,
+  );
+  for (const monthPlan of reference) {
+    if (left <= 0) break;
+    // byEnvelope lists the closest deadline first, so spare cents go there.
+    const parts = Object.entries(monthPlan.byEnvelope);
+    const monthTotal = parts.reduce((sum, [, cents]) => sum + cents, 0);
+    if (monthTotal === 0) continue;
+    const pour = Math.min(left, monthTotal);
+    let poured = 0;
+    const amounts = parts.map(([id, cents]) => {
+      const amount = Math.floor((pour * cents) / monthTotal);
+      poured += amount;
+      return [id, amount] as const;
+    });
+    let spare = pour - poured;
+    for (const [id, amount] of amounts) {
+      const extraCent = spare > 0 ? 1 : 0;
+      spare -= extraCent;
+      shares[id] += amount + extraCent;
+    }
+    left -= pour;
+  }
+  return { shares, extraCents: Math.max(0, left), shortfallCents: 0 };
+}
+
 /** The set-aside plan for a pot holding `potCents`. */
 export function planFromPot(envelopes: Expense[], potCents: Cents, currentMonth: Month): MonthPlan[] {
   return planSetAside(withShares(envelopes, sharePot(potCents, envelopes, currentMonth), currentMonth), currentMonth);

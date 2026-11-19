@@ -6,9 +6,9 @@ import { LedgerColumns, LedgerRows } from './components/Ledger';
 import { SyncPanel } from './components/SyncPanel';
 import { ThisMonth } from './components/ThisMonth';
 import { dayOfDate, monthOfDate } from './engine/months';
-import { sharePot, withShares } from './engine/pot';
+import { withShares } from './engine/pot';
 import { potCents } from './engine/savingsLog';
-import { periodStatus } from './engine/period';
+import { periodStatus, shareByRule } from './engine/period';
 import { currentPeriod } from './engine/paychecks';
 import { DEFAULT_PAYDAY, periodMonth, planningView } from './engine/timing';
 import { PaycheckButton } from './components/PaycheckButton';
@@ -109,7 +109,11 @@ export default function App() {
   );
   const plan = status.plan;
   // What the pot holds right now for each expense.
-  const potShares = useMemo(() => sharePot(pot, planningExpenses, currentPaycheck), [pot, planningExpenses, currentPaycheck]);
+  // Shared the same way as this period's plan, so the bars and the ledger agree.
+  const potShares = useMemo(
+    () => shareByRule(status, pot, planningExpenses, currentPaycheck),
+    [status, pot, planningExpenses, currentPaycheck],
+  );
   const shownEnvelopes = useMemo(
     () => withShares(envelopes, potShares, currentPaycheck),
     [envelopes, potShares, currentPaycheck],
@@ -160,6 +164,7 @@ export default function App() {
                 monthPlan={plan[0]}
                 envelopes={shownEnvelopes}
                 isExample={showingExample}
+                closestFirst={status.rule === 'closest'}
                 paycheckLabel={paycheckLabel}
                 today={dayOfDate(new Date())}
                 stillOpenCents={showingExample ? undefined : status.openCents}

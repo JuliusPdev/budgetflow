@@ -439,6 +439,13 @@ ol {
   }
 }
 
+/* Said plainly when the pot switches to protecting the next bills. */
+.closest-note {
+  margin: var(--space-2) 0 var(--space-3);
+  padding-left: var(--space-2);
+  border-left: 2px solid var(--terracotta);
+}
+
 /* ─── Ledger ──────────────────────────────────────────────────────────────── */
 
 .ledger-heading {

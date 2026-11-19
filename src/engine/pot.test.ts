@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { planFromPot, REFILL_ID, sharePot, withShares } from './pot';
+import { planFromPot, REFILL_ID, sharePot, sharePotByPlan, withShares } from './pot';
 import type { Envelope } from './types';
 
 // All amounts are made up. savedCents no longer matters: the pot decides.
@@ -88,5 +88,38 @@ describe('planFromPot', () => {
     const plan = planFromPot([flights], -5_000, NOVEMBER);
     expect(plan[0].byEnvelope[REFILL_ID]).toBe(5_000);
     expect(plan.reduce((sum, month) => sum + month.totalCents, 0)).toBe(95_000);
+  });
+});
+
+describe('sharePotByPlan', () => {
+  // Your example, with made-up names: €1,120 over four paychecks from November,
+  // split 150 / 110 / 20 for Nov and Dec, then 0 / 0 / 280.
+  const gifts: Envelope = { id: 'gifts', name: 'Presents', targetCents: 30_000, dueMonth: '2026-12', savedCents: 0 };
+  const show: Envelope = { id: 'show', name: 'Musical', targetCents: 22_000, dueMonth: '2026-12', savedCents: 0 };
+  const trip: Envelope = { id: 'trip', name: 'Trip', targetCents: 60_000, dueMonth: '2027-02', savedCents: 0 };
+  const three = [gifts, show, trip];
+
+  it('fills each expense the way the plan splits a paycheck', () => {
+    expect(sharePotByPlan(28_000, three, NOVEMBER, NOVEMBER).shares).toEqual({ gifts: 15_000, show: 11_000, trip: 2_000 });
+  });
+
+  it('pours money beyond one paycheck into the next in the same proportions', () => {
+    // €300: Nov fully, then €20 of December split 150 : 110 : 20.
+    expect(sharePotByPlan(30_000, three, NOVEMBER, NOVEMBER).shares).toEqual({ gifts: 16_072, show: 11_786, trip: 2_142 });
+  });
+
+  it('keeps growing in the same pattern in the next period', () => {
+    // Still planned from November: €560 is exactly Nov + Dec.
+    expect(sharePotByPlan(56_000, three, NOVEMBER, '2026-12').shares).toEqual({ gifts: 30_000, show: 22_000, trip: 4_000 });
+  });
+
+  it('frees a deleted expense’s money for the others', () => {
+    const shares = sharePotByPlan(28_000, [show, trip], NOVEMBER, NOVEMBER).shares;
+    expect(shares.show + shares.trip).toBe(28_000);
+  });
+
+  it('counts money beyond every expense as extra, and a pot below zero as a shortfall', () => {
+    expect(sharePotByPlan(120_000, three, NOVEMBER, NOVEMBER).extraCents).toBe(8_000);
+    expect(sharePotByPlan(-5_000, three, NOVEMBER, NOVEMBER).shortfallCents).toBe(5_000);
   });
 });

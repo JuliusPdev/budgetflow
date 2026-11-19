@@ -19,6 +19,8 @@ interface ThisMonthProps {
    * Left out for examples, which have no log: then the full plan is shown.
    */
   stillOpenCents?: Cents;
+  /** You're behind and the pot covers the closest deadlines first: say so. */
+  closestFirst?: boolean;
   /** Extra content under the headline amount, e.g. this month's progress. */
   children?: ReactNode;
 }
@@ -31,6 +33,7 @@ export function ThisMonth({
   paycheckLabel,
   today,
   stillOpenCents,
+  closestFirst = false,
   children,
 }: ThisMonthProps) {
   if (monthPlan === undefined) {
@@ -88,6 +91,12 @@ export function ThisMonth({
 
       <div className="this-month-goals">
         <h2 className="section-label">What it's for</h2>
+        {closestFirst && (
+          <p className="field-hint closest-note">
+            You're behind your plan, so your pot covers your closest deadlines first. Catch up, and your
+            expenses fill together again.
+          </p>
+        )}
         <ul className="goals">
           {goals.map(({ envelope, shareCents }) => (
             <GoalLine key={envelope.id} envelope={envelope} shareCents={shareCents} />
