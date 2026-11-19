@@ -65,11 +65,11 @@ describe('sharePot', () => {
 describe('planFromPot', () => {
   it('plans what the pot does not cover yet', () => {
     // €300 covers the presents and €100 of the flights: €800 left by January.
-    expect(totalsOf([presents, flights], 30_000)).toEqual([26_667, 26_667, 26_666]);
+    expect(totalsOf([presents, flights], 30_000)).toEqual([26_700, 26_700, 26_600]);
   });
 
   it('lowers future set-asides when you put in more', () => {
-    expect(totalsOf([presents, flights], 60_000)).toEqual([16_667, 16_667, 16_666]);
+    expect(totalsOf([presents, flights], 60_000)).toEqual([16_700, 16_700, 16_600]);
   });
 
   it('plans nothing when the pot covers everything', () => {

@@ -8,6 +8,8 @@ import { PotHistory } from './PotHistory';
 interface PotPanelProps {
   potCents: Cents;
   potShares: PotShares;
+  /** True while the pot covers the closest deadlines first instead of following the plan. */
+  closestFirst: boolean;
   log: LogEntry[];
   /** Makes the pot match what you say is really there. Returns the new entry's id, or null if nothing changed. */
   onCorrect: (actualCents: Cents) => string | null;
@@ -19,7 +21,7 @@ interface PotPanelProps {
 }
 
 /** What's in your savings pot, what it's meant for, and a way to correct it. */
-export function PotPanel({ potCents, potShares, log, onCorrect, onUndo, onChangeAmount, onDelete, children }: PotPanelProps) {
+export function PotPanel({ potCents, potShares, closestFirst, log, onCorrect, onUndo, onChangeAmount, onDelete, children }: PotPanelProps) {
   const id = useId();
   const [isCorrecting, setIsCorrecting] = useState(false);
   const [amountText, setAmountText] = useState('');
@@ -63,7 +65,7 @@ export function PotPanel({ potCents, potShares, log, onCorrect, onUndo, onChange
         </p>
       ) : (
         <p className="field-hint">
-          {formatEuros(forExpensesCents)} meant for your expenses, closest deadline first
+          {formatEuros(forExpensesCents)} meant for your expenses, {closestFirst ? 'closest deadline first' : 'shared the way your plan splits each paycheck'}
           {potShares.extraCents > 0 && ` · ${formatEuros(potShares.extraCents)} extra, not needed yet`}.
         </p>
       )}

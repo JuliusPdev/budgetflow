@@ -58,10 +58,10 @@ describe('the current period', () => {
 
 describe('how the pot is shared', () => {
   it('follows the plan while that asks nothing extra', () => {
-    // €300 set aside in November, now December: following the plan still asks €273.33.
+    // €300 set aside in November, now December: following the plan still asks €274, €273, €273.
     const december = periodStatus(expenses, [setAside300], '2026-12', '2026-12-21');
     expect(december.rule).toBe('plan');
-    expect(december.plan.map((month) => month.totalCents)).toEqual([27_334, 27_333, 27_333]);
+    expect(december.plan.map((month) => month.totalCents)).toEqual([27_400, 27_300, 27_300]);
     // The ledger split follows the plan too: the December bills get the rest they still need.
     expect(december.plan[0].byEnvelope.presents).toBe(30_000 - 16_072);
   });

@@ -25,6 +25,7 @@ import { useSync } from './hooks/useSync';
 import { sampleEnvelopes } from './sampleEnvelopes';
 import { createLocalStore } from './storage/envelopeStore';
 import { formatDayShort, formatMonthLong, formatMonthShort, ordinal } from './utils/format';
+import { wholeEuros } from './utils/wholeEuros';
 import { loadHideExamples, saveHideExamples } from './storage/preferences';
 
 type LayoutChoice = 'auto' | 'rows' | 'columns';
@@ -110,9 +111,15 @@ export default function App() {
   const plan = status.plan;
   // What the pot holds right now for each expense.
   // Shared the same way as this period's plan, so the bars and the ledger agree.
-  const potShares = useMemo(
-    () => shareByRule(status, pot, planningExpenses, currentPaycheck),
-    [status, pot, planningExpenses, currentPaycheck],
+  // Rounded to whole euros for reading; the engine keeps its exact cents.
+  const potShares = useMemo(() => {
+    const exact = shareByRule(status, pot, planningExpenses, currentPaycheck);
+    return { ...exact, shares: wholeEuros(exact.shares) };
+  }, [status, pot, planningExpenses, currentPaycheck]);
+  // Each paycheck's split in whole euros too; its total already is.
+  const shownPlan = useMemo(
+    () => plan.map((monthPlan) => ({ ...monthPlan, byEnvelope: wholeEuros(monthPlan.byEnvelope) })),
+    [plan],
   );
   const shownEnvelopes = useMemo(
     () => withShares(envelopes, potShares, currentPaycheck),
@@ -161,7 +168,7 @@ export default function App() {
               <EmptyStart onAddFirst={openAddForm} onShowExamples={() => changeHideExamples(false)} />
             ) : (
               <ThisMonth
-                monthPlan={plan[0]}
+                monthPlan={shownPlan[0]}
                 envelopes={shownEnvelopes}
                 isExample={showingExample}
                 closestFirst={status.rule === 'closest'}
@@ -221,9 +228,9 @@ export default function App() {
                 </p>
               )}
               {layout === 'columns' ? (
-                <LedgerColumns plan={plan} envelopes={shownEnvelopes} payday={settings.payday} currentStart={period.startIsReal ? period.start : undefined} />
+                <LedgerColumns plan={shownPlan} envelopes={shownEnvelopes} payday={settings.payday} currentStart={period.startIsReal ? period.start : undefined} />
               ) : (
-                <LedgerRows plan={plan} envelopes={shownEnvelopes} payday={settings.payday} currentStart={period.startIsReal ? period.start : undefined} />
+                <LedgerRows plan={shownPlan} envelopes={shownEnvelopes} payday={settings.payday} currentStart={period.startIsReal ? period.start : undefined} />
               )}
             </section>
           )}
@@ -232,6 +239,7 @@ export default function App() {
             <PotPanel
               potCents={pot}
               potShares={potShares}
+              closestFirst={status.rule === 'closest'}
               log={log}
               onCorrect={(actualCents) => correctPot(actualCents, pot, dayOfDate(new Date()))}
               onUndo={deleteLogEntry}

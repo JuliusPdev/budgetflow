@@ -5,15 +5,16 @@ import type { Cents, Day, Expense, Month } from '../engine/types';
 // Done only at display time, so the engine never deals with rounding or wording.
 
 const euroFormat = new Intl.NumberFormat('en-IE', { style: 'currency', currency: 'EUR' });
+const wholeEuroFormat = new Intl.NumberFormat('en-IE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
 const shortMonthFormat = new Intl.DateTimeFormat('en-GB', { month: 'short', year: 'numeric' });
 const longMonthFormat = new Intl.DateTimeFormat('en-GB', { month: 'long', year: 'numeric' });
 const shortDayFormat = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' });
 const longDayFormat = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
 const dayWithYearFormat = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 
-/** 24546 → "€245.46" */
+/** 24546 → "€245.46", 27400 → "€274" (whole euros without ".00"). */
 export function formatEuros(cents: Cents): string {
-  return euroFormat.format(cents / 100);
+  return cents % 100 === 0 ? wholeEuroFormat.format(cents / 100) : euroFormat.format(cents / 100);
 }
 
 function toDate(month: Month): Date {

@@ -20,11 +20,11 @@ describe('previewTakeOut', () => {
 
   it("shows what happens later if it isn't put back this period", () => {
     const preview = previewTakeOut(expenses, [setAside300], NOVEMBER, START, 30_000, TODAY);
-    // Usually the €20 you were ahead lowers the rest to €273.33. Without the €300 back,
+    // Usually the €20 you were ahead lowers the rest to €274, €273, €273. Without the €300 back,
     // December has to cover its €520 of bills in full, and the trip's months rise a little.
     expect(groupChanges(preview.laterChanges)).toEqual([
-      { from: '2026-12', to: '2026-12', beforeCents: 27_334, afterCents: 52_000 },
-      { from: '2027-01', to: '2027-02', beforeCents: 27_333, afterCents: 30_000 },
+      { from: '2026-12', to: '2026-12', beforeCents: 27_400, afterCents: 52_000 },
+      { from: '2027-01', to: '2027-02', beforeCents: 27_300, afterCents: 30_000 },
     ]);
     expect(preview.backToNormal).toBeNull();
   });

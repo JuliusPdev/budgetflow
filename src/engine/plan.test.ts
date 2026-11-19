@@ -46,8 +46,8 @@ describe('planSetAside', () => {
       '2026-11',
     );
 
-    // €2,700 over 11 months = €245.45…; the 5 leftover cents go to the first months.
-    expect(totalsOf(plan)).toEqual([...Array(5).fill(24_546), ...Array(6).fill(24_545)]);
+    // €2,700 over 11 months = €245.45…, in whole euros: the 5 leftover euros go to the first months.
+    expect(totalsOf(plan)).toEqual([...Array(5).fill(24_600), ...Array(6).fill(24_500)]);
     expect(receivedBy(plan, 'flights', '2027-01')).toBe(30_000);
     expect(receivedBy(plan, 'laptop', '2027-09')).toBe(240_000);
   });
@@ -135,11 +135,11 @@ describe('planSetAside', () => {
         '2026-11',
       );
 
-      expect(plan[0].byEnvelope).toEqual({ flights: 10_000, laptop: 14_546 });
-      expect(plan[2].byEnvelope).toEqual({ flights: 10_000, laptop: 14_546 });
+      expect(plan[0].byEnvelope).toEqual({ flights: 10_000, laptop: 14_600 });
+      expect(plan[2].byEnvelope).toEqual({ flights: 10_000, laptop: 14_600 });
       // Once the flights are covered, the laptop takes over the whole amount.
-      expect(plan[3].byEnvelope).toEqual({ laptop: 24_546 });
-      expect(plan[10].byEnvelope).toEqual({ laptop: 24_545 });
+      expect(plan[3].byEnvelope).toEqual({ laptop: 24_600 });
+      expect(plan[10].byEnvelope).toEqual({ laptop: 24_500 });
     });
 
     it('shares every month steadily between goals with the same deadline', () => {
@@ -172,5 +172,23 @@ describe('planSetAside', () => {
 
   it('has nothing to plan without envelopes', () => {
     expect(planSetAside([], '2026-11')).toEqual([]);
+  });
+});
+
+describe('whole euros', () => {
+  it('asks whole euros per paycheck, never less than needed, and each split adds up', () => {
+    const plan = planSetAside(
+      [
+        { id: 'a', name: 'a', targetCents: 30_000, dueMonth: '2026-12', savedCents: 0 },
+        { id: 'b', name: 'b', targetCents: 52_000, dueMonth: '2027-01', savedCents: 0 },
+      ],
+      '2026-11',
+    );
+    // €820 over three paychecks.
+    expect(plan.map((month) => month.totalCents)).toEqual([27_400, 27_300, 27_300]);
+    for (const month of plan) {
+      expect(month.totalCents % 100).toBe(0);
+      expect(Object.values(month.byEnvelope).reduce((sum, cents) => sum + cents, 0)).toBe(month.totalCents);
+    }
   });
 });

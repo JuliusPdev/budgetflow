@@ -134,20 +134,23 @@ function smoothTotals(required: Cents[]): Cents[] {
       }
     }
 
-    totals.push(...spreadEvenly(bindingNeed, bindingEnd - segmentStart + 1));
-    setAsideSoFar += bindingNeed;
+    // Whole euros per paycheck, rounded up so you're never short: €820 over three
+    // paychecks is €274, €273, €273. At most €1 more than needed per stretch.
+    const euros = Math.max(0, Math.ceil(bindingNeed / 100));
+    totals.push(...spreadEvenly(euros, bindingEnd - segmentStart + 1).map((wholeEuros) => wholeEuros * 100));
+    setAsideSoFar += euros * 100;
     segmentStart = bindingEnd + 1;
   }
   return totals;
 }
 
 /**
- * Splits whole cents as evenly as possible. Leftover cents go to the earliest
- * months, so the running total is never behind a deadline — not even by a cent.
+ * Splits a whole amount (cents or euros) as evenly as possible. Leftover units go
+ * to the earliest months, so the running total is never behind a deadline.
  */
-function spreadEvenly(totalCents: Cents, monthCount: number): Cents[] {
-  const base = Math.floor(totalCents / monthCount);
-  const leftover = totalCents - base * monthCount;
+function spreadEvenly(total: number, monthCount: number): number[] {
+  const base = Math.floor(total / monthCount);
+  const leftover = total - base * monthCount;
   return Array.from({ length: monthCount }, (_, index) => base + (index < leftover ? 1 : 0));
 }
 
@@ -184,6 +187,18 @@ function allocate(
       roomLeft[index] -= share;
     });
   }
+
+  // Rounding up to whole euros can leave a few cents of room in a month. They go
+  // to the latest deadline still saving that month, so each month's split adds up.
+  months.forEach((_, index) => {
+    if (roomLeft[index] <= 0) return;
+    const latest = [...inTurnOrder]
+      .reverse()
+      .find((envelope) => months.indexOf(effectiveDeadline(envelope, currentMonth)) >= index);
+    if (latest === undefined) return;
+    sharesByMonth[index][latest.id] = (sharesByMonth[index][latest.id] ?? 0) + roomLeft[index];
+    roomLeft[index] = 0;
+  });
 
   return months.map((month, index) => ({
     month,
