@@ -6,13 +6,16 @@ import { LedgerColumns, LedgerRows } from './components/Ledger';
 import { SyncPanel } from './components/SyncPanel';
 import { ThisMonth } from './components/ThisMonth';
 import { dayOfDate, monthOfDate } from './engine/months';
-import { planFromPot, sharePot, withShares } from './engine/pot';
-import { potAtPeriodStart, potCents, stillOpenThisMonth } from './engine/savingsLog';
+import { sharePot, withShares } from './engine/pot';
+import { potCents } from './engine/savingsLog';
+import { periodStatus } from './engine/period';
 import { currentPeriod } from './engine/paychecks';
-import { DEFAULT_PAYDAY, planningView } from './engine/timing';
+import { DEFAULT_PAYDAY, periodMonth, planningView } from './engine/timing';
 import { PaycheckButton } from './components/PaycheckButton';
 import type { LogEntry } from './engine/types';
 import { PotPanel } from './components/PotPanel';
+import { TakeOut } from './components/TakeOut';
+import { previewTakeOut } from './engine/takeOut';
 import { MonthProgress } from './components/MonthProgress';
 import { PaydaySettings } from './components/PaydaySettings';
 import { useAccount } from './hooks/useAccount';
@@ -21,7 +24,7 @@ import { useIsWide } from './hooks/useIsWide';
 import { useSync } from './hooks/useSync';
 import { sampleEnvelopes } from './sampleEnvelopes';
 import { createLocalStore } from './storage/envelopeStore';
-import { formatDayShort, formatMonthLong, ordinal } from './utils/format';
+import { formatDayShort, formatMonthLong, formatMonthShort, ordinal } from './utils/format';
 import { loadHideExamples, saveHideExamples } from './storage/preferences';
 
 type LayoutChoice = 'auto' | 'rows' | 'columns';
@@ -49,6 +52,7 @@ export default function App() {
     log,
     logSetAside,
     correctPot,
+    takeOut,
     logPaycheck,
     changeLogAmount,
     deleteLogEntry,
@@ -97,12 +101,13 @@ export default function App() {
   const pot = potCents(envelopes, activeLog);
   // The engine plans in paychecks; the screens show your real dates.
   const planningExpenses = useMemo(() => planningView(envelopes, settings.payday), [envelopes, settings.payday]);
-  // Planning from the pot as it was when this period started keeps its amount
-  // fixed while you log set-asides against it.
-  const plan = useMemo(
-    () => planFromPot(planningExpenses, potAtPeriodStart(envelopes, activeLog, currentPaycheck), currentPaycheck),
-    [planningExpenses, envelopes, activeLog, currentPaycheck],
+  // Planned from the pot as it stood when this period started, so the period's
+  // amount stays fixed: what you put in and take out during it cancels out.
+  const status = useMemo(
+    () => periodStatus(planningExpenses, activeLog, currentPaycheck, period.start),
+    [planningExpenses, activeLog, currentPaycheck, period.start],
   );
+  const plan = status.plan;
   // What the pot holds right now for each expense.
   const potShares = useMemo(() => sharePot(pot, planningExpenses, currentPaycheck), [pot, planningExpenses, currentPaycheck]);
   const shownEnvelopes = useMemo(
@@ -157,7 +162,7 @@ export default function App() {
                 isExample={showingExample}
                 paycheckLabel={paycheckLabel}
                 today={dayOfDate(new Date())}
-                stillOpenCents={showingExample ? undefined : stillOpenThisMonth(plan[0], log)}
+                stillOpenCents={showingExample ? undefined : status.openCents}
               >
                 {!showingExample && hasPayday && (
                   <PaycheckButton
@@ -172,6 +177,7 @@ export default function App() {
                 {!showingExample && plan[0] !== undefined && (
                   <MonthProgress
                     monthPlan={plan[0]}
+                    status={status}
                     log={log}
                     today={dayOfDate(new Date())}
                     periodName={periodName}
@@ -226,7 +232,16 @@ export default function App() {
               onUndo={deleteLogEntry}
               onChangeAmount={changeLogAmount}
               onDelete={deleteLogEntry}
-            />
+            >
+              <TakeOut
+                previewFor={(amountCents) => previewTakeOut(planningExpenses, log, currentPaycheck, period.start, amountCents, today)}
+                unit={hasPayday ? 'paycheck' : 'month'}
+                periodLabel={(month) => formatMonthShort(periodMonth(month, settings.payday))}
+                log={log}
+                onTakeOut={(amountCents, reason) => takeOut({ date: today, month: currentPaycheck, amountCents, reason })}
+                onUndo={deleteLogEntry}
+              />
+            </PotPanel>
           )}
 
           <ExpenseList

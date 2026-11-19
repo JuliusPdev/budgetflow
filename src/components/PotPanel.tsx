@@ -1,4 +1,4 @@
-import { useId, useState, type FormEvent } from 'react';
+import { useId, useState, type FormEvent, type ReactNode } from 'react';
 import type { PotShares } from '../engine/pot';
 import type { Cents, LogEntry } from '../engine/types';
 import { centsToInputText, parseEurosToCents } from '../utils/expenseDraft';
@@ -14,10 +14,12 @@ interface PotPanelProps {
   onUndo: (entryId: string) => void;
   onChangeAmount: (entryId: string, amountCents: Cents) => void;
   onDelete: (entryId: string) => void;
+  /** Taking money out, shown with the pot's other actions. */
+  children?: ReactNode;
 }
 
 /** What's in your savings pot, what it's meant for, and a way to correct it. */
-export function PotPanel({ potCents, potShares, log, onCorrect, onUndo, onChangeAmount, onDelete }: PotPanelProps) {
+export function PotPanel({ potCents, potShares, log, onCorrect, onUndo, onChangeAmount, onDelete, children }: PotPanelProps) {
   const id = useId();
   const [isCorrecting, setIsCorrecting] = useState(false);
   const [amountText, setAmountText] = useState('');
@@ -131,6 +133,8 @@ export function PotPanel({ potCents, potShares, log, onCorrect, onUndo, onChange
           Correct the balance
         </button>
       )}
+
+      {children}
 
       <PotHistory log={log} onChangeAmount={onChangeAmount} onDelete={onDelete} />
     </section>

@@ -93,7 +93,24 @@ export interface PaycheckEntry {
   amountCents?: Cents;
 }
 
-export type LogEntry = SetAsideEntry | AdjustmentEntry | PaycheckEntry;
+/**
+ * Money you took out of the pot for something unplanned. The pot simply holds
+ * less: if an expense was counting on that money, your next set-asides put it
+ * back before that expense is due.
+ */
+export interface WithdrawalEntry {
+  id: string;
+  kind: 'withdrawal';
+  date: Day;
+  /** The paycheck period it happened in. */
+  month: Month;
+  /** How much went out; always above zero. */
+  amountCents: Cents;
+  /** What it was for. */
+  reason: string;
+}
+
+export type LogEntry = SetAsideEntry | AdjustmentEntry | PaycheckEntry | WithdrawalEntry;
 
 /** Your choices that shape the calculation, shared by all your devices. */
 export interface BudgetSettings {
@@ -116,7 +133,8 @@ export interface BudgetData {
  *   3 — plus exact due dates and settings (payday)
  *   4 — one pot: expenses hold no money; the log says what's in the pot
  *   5 — plus paychecks: when your pay really arrived
+ *   6 — plus withdrawals: money taken out of the pot
  */
 export interface SavedData extends BudgetData {
-  version: 5;
+  version: 6;
 }

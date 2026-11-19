@@ -973,6 +973,88 @@ ol {
   flex-basis: 100%;
 }
 
+/* ─── Take money out ─────────────────────────────────────────────────────── */
+
+.take-out-form {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.take-out-title {
+  font-family: var(--font-display);
+  font-size: 1.375rem;
+  font-weight: 400;
+}
+
+.take-out-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+}
+
+@media (min-width: 640px) {
+  .take-out-fields {
+    grid-template-columns: 9rem minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+/* The cost of borrowing, written in the ink of money going out. */
+.cost-preview {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-left: 3px solid var(--terracotta);
+  background: var(--paper);
+}
+
+.cost-title {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--terracotta);
+}
+
+.cost-label {
+  font-size: 0.8125rem;
+  color: var(--dim);
+}
+
+.cost-list,
+.cost-notes {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cost-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding-bottom: var(--space-1);
+  border-bottom: 1px dashed var(--line);
+}
+
+.cost-before {
+  color: var(--dim);
+  text-decoration: line-through;
+}
+
+.cost-notes {
+  font-size: 0.875rem;
+  color: var(--ink-soft);
+}
+
+.cost-warning {
+  font-weight: 500;
+  color: var(--terracotta);
+}
+
 /* ─── Sync ────────────────────────────────────────────────────────────────── */
 
 .sync,

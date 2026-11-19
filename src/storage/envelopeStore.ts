@@ -63,6 +63,15 @@ export function isLogEntry(value: unknown): value is LogEntry {
   if (candidate.kind === 'set-aside') {
     return isDay(candidate.date) && isMonth(candidate.month) && isWholeCents(candidate.amountCents);
   }
+  if (candidate.kind === 'withdrawal') {
+    return (
+      isDay(candidate.date) &&
+      isMonth(candidate.month) &&
+      isWholeCents(candidate.amountCents) &&
+      (candidate.amountCents as number) > 0 &&
+      typeof candidate.reason === 'string'
+    );
+  }
   if (candidate.kind === 'paycheck') {
     return (
       isDay(candidate.date) &&
@@ -155,6 +164,7 @@ function toOnePot(oldExpenses: OldExpense[], oldLog: OldLogEntry[], settings: Bu
  *   3 — plus exact due dates and settings
  *   4 — one pot
  *   5 — plus paychecks in the log
+ *   6 — plus withdrawals in the log
  * Versions 1–3 are converted to one pot; versions 1–2 get payday on the 1st,
  * which keeps their calculations as they were.
  */
@@ -165,8 +175,8 @@ function parseSavedData(raw: string): BudgetData | null {
     const data = parsed as Record<string, unknown>;
     if (!Array.isArray(data.envelopes)) return null;
 
-    // Version 5 only added paychecks to the log, so both read the same way.
-    if (data.version === 4 || data.version === 5) {
+    // Versions 5 and 6 only added kinds of log entry, so all three read the same way.
+    if (data.version === 4 || data.version === 5 || data.version === 6) {
       if (!data.envelopes.every(isExpense)) return null;
       if (!Array.isArray(data.log) || !data.log.every(isLogEntry) || !isSettings(data.settings)) return null;
       return { envelopes: data.envelopes.map(onlyExpenseFields), log: data.log, settings: data.settings };
@@ -191,7 +201,7 @@ function onlyExpenseFields(expense: Expense): Expense {
 
 /** Always writes the newest version. */
 function toSavedData(data: BudgetData): SavedData {
-  return { version: 5, envelopes: data.envelopes, log: data.log, settings: data.settings };
+  return { version: 6, envelopes: data.envelopes, log: data.log, settings: data.settings };
 }
 
 /**

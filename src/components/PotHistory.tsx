@@ -24,12 +24,23 @@ function signed(cents: Cents): string {
 
 function titleOf(entry: LogEntry): string {
   if (entry.kind === 'set-aside') return 'Set aside';
+  if (entry.kind === 'withdrawal') return `Took out · ${entry.reason}`;
   if (entry.kind === 'paycheck') return `Paycheck arrived · ${formatMonthShort(entry.month)}`;
   return entry.note ?? 'Correction';
 }
 
 /** Pot movements can be fixed in place; a paycheck is deleted and logged again instead. */
 type MoneyEntry = Exclude<LogEntry, { kind: 'paycheck' }>;
+
+/** What an entry did to the pot: a withdrawal is stored as a positive amount but takes money out. */
+function potEffect(entry: MoneyEntry): Cents {
+  return entry.kind === 'withdrawal' ? -entry.amountCents : entry.amountCents;
+}
+
+/** Set-asides and withdrawals are amounts above zero; only corrections can be negative. */
+function isPositiveOnly(entry: MoneyEntry): boolean {
+  return entry.kind !== 'adjustment';
+}
 
 /** Every movement of money in the pot, newest first, each fixable or removable. */
 export function PotHistory({ log, onChangeAmount, onDelete }: PotHistoryProps) {
@@ -49,10 +60,10 @@ export function PotHistory({ log, onChangeAmount, onDelete }: PotHistoryProps) {
     event.preventDefault();
     if (editing === null) return;
     const cents = parseSignedEuros(editing.text);
-    if (cents === null || (entry.kind === 'set-aside' && cents <= 0)) {
+    if (cents === null || (isPositiveOnly(entry) && cents <= 0)) {
       setEditing({
         ...editing,
-        error: entry.kind === 'set-aside' ? 'Enter an amount like 200 or 199.50' : 'Enter an amount like 100 or −100',
+        error: isPositiveOnly(entry) ? 'Enter an amount like 200 or 199.50' : 'Enter an amount like 100 or −100',
       });
       return;
     }
@@ -101,7 +112,7 @@ export function PotHistory({ log, onChangeAmount, onDelete }: PotHistoryProps) {
                     <input
                       id={`${id}-${entry.id}`}
                       type="text"
-                      inputMode={entry.kind === 'set-aside' ? 'decimal' : 'text'}
+                      inputMode={isPositiveOnly(entry) ? 'decimal' : 'text'}
                       autoFocus
                       value={editing.text}
                       aria-invalid={editing.error !== null}
@@ -121,8 +132,8 @@ export function PotHistory({ log, onChangeAmount, onDelete }: PotHistoryProps) {
                     )}
                   </form>
                 ) : (
-                  <span className={`figures log-amount ${entry.amountCents < 0 ? 'log-amount--out' : 'log-amount--in'}`}>
-                    {signed(entry.amountCents)}
+                  <span className={`figures log-amount ${potEffect(entry) < 0 ? 'log-amount--out' : 'log-amount--in'}`}>
+                    {signed(potEffect(entry))}
                   </span>
                 )}
 
@@ -161,6 +172,7 @@ export function PotHistory({ log, onChangeAmount, onDelete }: PotHistoryProps) {
                           setConfirming(null);
                           setEditing({
                             entryId: entry.id,
+                            // A withdrawal is edited as the amount taken out, without a minus.
                             text: `${entry.amountCents < 0 ? '−' : ''}${centsToInputText(Math.abs(entry.amountCents))}`,
                             error: null,
                           });

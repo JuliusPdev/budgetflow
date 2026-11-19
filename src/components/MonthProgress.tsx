@@ -1,6 +1,6 @@
 import { useId, useState, type FormEvent } from 'react';
+import type { PeriodStatus } from '../engine/period';
 import type { MonthPlan } from '../engine/plan';
-import { setAsideInMonth, stillOpenThisMonth } from '../engine/savingsLog';
 import type { Cents, Day, LogEntry, SetAsideEntry } from '../engine/types';
 import { centsToInputText, parseEurosToCents } from '../utils/expenseDraft';
 import { formatEuros } from '../utils/format';
@@ -8,6 +8,8 @@ import { formatEuros } from '../utils/format';
 interface MonthProgressProps {
   /** This month's plan, calculated from where things stood at the start of the month. */
   monthPlan: MonthPlan;
+  /** Where you stand this period: what's planned, what moved, what's still open. */
+  status: PeriodStatus;
   log: LogEntry[];
   today: Day;
   /** How to name this period in sentences: a month ("November") or "this savings phase". */
@@ -17,9 +19,10 @@ interface MonthProgressProps {
 }
 
 /** How much of this month's plan you've actually set aside, and a way to log more. */
-export function MonthProgress({ monthPlan, log, today, periodName, onLog, onUndo }: MonthProgressProps) {
-  const loggedCents = setAsideInMonth(log, monthPlan.month);
-  const openCents = stillOpenThisMonth(monthPlan, log);
+export function MonthProgress({ monthPlan, status, log, today, periodName, onLog, onUndo }: MonthProgressProps) {
+  const { movements, openCents } = status;
+  // What this period really added to the pot: set aside, minus taken out, plus corrections.
+  const loggedCents = Math.max(0, movements.netCents);
 
   // Only what you typed is remembered. Until you type, the field follows what's
   // still open, so it stays right when the plan changes.
@@ -54,8 +57,10 @@ export function MonthProgress({ monthPlan, log, today, periodName, onLog, onUndo
     setLastLogged(null);
   }
 
-  const progress = monthPlan.totalCents === 0 ? 1 : Math.min(1, loggedCents / monthPlan.totalCents);
-  const isDone = loggedCents >= monthPlan.totalCents;
+  const progress = openCents === 0 || monthPlan.totalCents === 0 ? 1 : Math.min(1, loggedCents / monthPlan.totalCents);
+  const isDone = openCents === 0;
+  // Only explain when something other than set-asides changed the pot this period.
+  const explanation = describeMovements(movements);
 
   return (
     <div className="month-progress">
@@ -76,6 +81,7 @@ export function MonthProgress({ monthPlan, log, today, periodName, onLog, onUndo
       >
         <span className="goal-bar-fill" style={{ width: `${progress * 100}%` }} />
       </div>
+      {explanation !== null && <p className="field-hint">{explanation}</p>}
       {isDone && <p className="progress-done sync-dot">Done for {periodName}</p>}
 
       <form className="log-form" onSubmit={handleSubmit} noValidate>
@@ -131,4 +137,17 @@ export function MonthProgress({ monthPlan, log, today, periodName, onLog, onUndo
       </div>
     </div>
   );
+}
+
+/** "You set aside €300 and took out €300 this period." — or null when there's nothing to explain. */
+function describeMovements(movements: PeriodStatus['movements']): string | null {
+  const { setAsideCents, takenOutCents, correctedCents } = movements;
+  if (takenOutCents === 0 && correctedCents === 0) return null;
+  const parts = [`set aside ${formatEuros(setAsideCents)}`];
+  if (takenOutCents > 0) parts.push(`took out ${formatEuros(takenOutCents)}`);
+  if (correctedCents !== 0) {
+    parts.push(`corrected the pot by ${correctedCents > 0 ? '+' : '−'}${formatEuros(Math.abs(correctedCents))}`);
+  }
+  const listed = parts.length === 2 ? parts.join(' and ') : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
+  return `You ${listed} this period.`;
 }

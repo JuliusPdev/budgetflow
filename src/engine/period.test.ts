@@ -1,0 +1,57 @@
+import { describe, expect, it } from 'vitest';
+import { periodStatus } from './period';
+import type { Expense, LogEntry } from './types';
+
+// The situation from our conversation, with made-up amounts: €1,120 of expenses
+// over four paychecks from November, nothing in the pot yet → €280 each.
+const NOVEMBER = '2026-11';
+const START = '2026-11-21';
+const expenses: Expense[] = [
+  { id: 'presents', name: 'Presents', targetCents: 30_000, dueMonth: '2026-12' },
+  { id: 'musical', name: 'Musical', targetCents: 22_000, dueMonth: '2026-12' },
+  { id: 'trip', name: 'Trip', targetCents: 60_000, dueMonth: '2027-02' },
+];
+const setAside300: LogEntry = { id: 'in', kind: 'set-aside', date: '2026-11-22', month: NOVEMBER, amountCents: 30_000 };
+
+function totals(log: LogEntry[]): number[] {
+  return periodStatus(expenses, log, NOVEMBER, START).plan.map((month) => month.totalCents);
+}
+
+describe('the current period', () => {
+  it('is done once you set aside its amount', () => {
+    const status = periodStatus(expenses, [setAside300], NOVEMBER, START);
+    expect(status.plannedCents).toBe(28_000);
+    expect(status.openCents).toBe(0);
+  });
+
+  it('keeps its amount when you take out what you put in: the two cancel out', () => {
+    const out: LogEntry = { id: 'out', kind: 'withdrawal', date: '2026-11-23', month: NOVEMBER, amountCents: 30_000, reason: 'Trip' };
+    const status = periodStatus(expenses, [setAside300, out], NOVEMBER, START);
+    expect(status.plannedCents).toBe(28_000);
+    expect(status.movements.netCents).toBe(0);
+    expect(status.openCents).toBe(28_000);
+    // Later paychecks are untouched as long as you put it back this period.
+    expect(totals([setAside300, out])).toEqual([28_000, 28_000, 28_000, 28_000]);
+  });
+
+  it('treats a correction the same way: €300 set aside, corrected to €200, leaves €80 open', () => {
+    const fix: LogEntry = { id: 'fix', kind: 'adjustment', amountCents: -10_000, date: '2026-11-23', note: 'Correction' };
+    const status = periodStatus(expenses, [setAside300, fix], NOVEMBER, START);
+    expect(status.movements.netCents).toBe(20_000);
+    expect(status.openCents).toBe(8_000);
+  });
+
+  it('asks for nothing back when the money came out of extra', () => {
+    // €1,300 in the pot from before: €180 more than all expenses need.
+    const rich: LogEntry[] = [{ id: 'start', kind: 'adjustment', amountCents: 130_000 }];
+    const out: LogEntry = { id: 'out', kind: 'withdrawal', date: '2026-11-23', month: NOVEMBER, amountCents: 10_000, reason: 'Concert' };
+    expect(periodStatus(expenses, [...rich, out], NOVEMBER, START).openCents).toBe(0);
+  });
+
+  it('spreads a gap that is still there when the next period starts', () => {
+    // November ended €280 short. December's bills (€520) are due in December, so the gap
+    // can't be spread past them: December covers them in full, the trip spreads after.
+    const december = periodStatus(expenses, [], '2026-12', '2026-12-21');
+    expect(december.plan.map((month) => month.totalCents)).toEqual([52_000, 30_000, 30_000]);
+  });
+});
