@@ -21,6 +21,8 @@ interface ThisMonthProps {
   stillOpenCents?: Cents;
   /** You're behind and the pot covers the closest deadlines first: say so. */
   closestFirst?: boolean;
+  /** Opens the add-an-expense dialog; missing while examples are shown. */
+  onAddExpense?: () => void;
   /** Extra content under the headline amount, e.g. this month's progress. */
   children?: ReactNode;
 }
@@ -34,14 +36,22 @@ export function ThisMonth({
   today,
   stillOpenCents,
   closestFirst = false,
+  onAddExpense,
   children,
 }: ThisMonthProps) {
+  const addButton = onAddExpense !== undefined && (
+    <button type="button" className="button-secondary add-expense-top" onClick={onAddExpense}>
+      Add an expense
+    </button>
+  );
+
   if (monthPlan === undefined) {
     return (
       <section className="this-month">
         <p className="eyebrow">This month</p>
         <h1 className="this-month-title">Nothing to set aside</h1>
         <p className="goal-detail">Add an expense you know is coming to see your monthly amount.</p>
+        {addButton}
       </section>
     );
   }
@@ -102,6 +112,7 @@ export function ThisMonth({
             <GoalLine key={envelope.id} envelope={envelope} shareCents={shareCents} />
           ))}
         </ul>
+        {addButton}
       </div>
     </section>
   );

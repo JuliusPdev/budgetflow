@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { AddExpenseDialog } from './components/AddExpenseDialog';
 import { Backup } from './components/Backup';
 import { EmptyStart, ExampleBanner } from './components/ExampleNotice';
 import { ExpenseList, NEW_EXPENSE } from './components/ExpenseList';
@@ -7,14 +8,15 @@ import { SyncPanel } from './components/SyncPanel';
 import { ThisMonth } from './components/ThisMonth';
 import { dayOfDate, monthOfDate } from './engine/months';
 import { buildColumns } from './engine/columns';
+import { previewExpense, type ExpensePreview } from './engine/expensePreview';
 import { buildFillUpView } from './engine/fillUp';
 import { withShares } from './engine/pot';
 import { potCents } from './engine/savingsLog';
 import { periodStatus, shareByRule } from './engine/period';
 import { currentPeriod } from './engine/paychecks';
-import { DEFAULT_PAYDAY, periodMonth, planningView } from './engine/timing';
+import { DEFAULT_PAYDAY, paycheckDates, periodMonth, planningView } from './engine/timing';
 import { PaycheckButton } from './components/PaycheckButton';
-import type { LogEntry } from './engine/types';
+import type { ExpenseFields, LogEntry } from './engine/types';
 import { PotPanel } from './components/PotPanel';
 import { TakeOut } from './components/TakeOut';
 import { previewTakeOut } from './engine/takeOut';
@@ -147,8 +149,20 @@ export default function App() {
   }
 
   function openAddForm(): void {
-    // The form focuses its first field when it opens, which scrolls it into view.
+    // Opens the add-an-expense dialog in front of the page.
     setOpenForm(NEW_EXPENSE);
+  }
+
+  // What adding or changing an expense would do, before saving. Always against
+  // your own expenses and log, never the examples: your first expense replaces them.
+  const ownPlanning = useMemo(() => planningView(savedEnvelopes, settings.payday), [savedEnvelopes, settings.payday]);
+  function previewFor(fields: ExpenseFields, replaceId?: string): ExpensePreview {
+    const [draft] = planningView([{ ...fields, id: replaceId ?? 'new-expense' }], settings.payday);
+    return previewExpense(ownPlanning, log, currentPaycheck, period.start, draft, replaceId);
+  }
+  /** A paycheck by its payday, "21 Dec"; plain months without a payday. */
+  function nameOfPaycheck(month: string): string {
+    return hasPayday ? formatDayShort(paycheckDates(month, settings.payday).last) : formatMonthShort(month);
   }
 
   return (
@@ -181,6 +195,7 @@ export default function App() {
                 paycheckLabel={paycheckLabel}
                 today={dayOfDate(new Date())}
                 stillOpenCents={showingExample ? undefined : status.openCents}
+                onAddExpense={showingExample ? undefined : openAddForm}
               >
                 {!showingExample && hasPayday && (
                   <PaycheckButton
@@ -268,12 +283,13 @@ export default function App() {
             sharesById={potShares.shares}
             currentMonth={calendarMonth}
             payday={settings.payday}
-            onAdd={addEnvelope}
             onUpdate={updateEnvelope}
             onRemove={removeEnvelope}
             onRestore={restoreEnvelope}
             openForm={openForm}
             onOpenFormChange={setOpenForm}
+            previewFor={previewFor}
+            paycheckLabel={nameOfPaycheck}
             fillUp={fillUpView === null ? undefined : { view: fillUpView, currentDone: status.openCents === 0 }}
           />
 
@@ -288,6 +304,16 @@ export default function App() {
           <PaydaySettings payday={settings.payday} onChange={setPayday} />
 
           <Backup data={data} onRestore={replaceAll} isSyncing={isSyncing} />
+          {openForm === NEW_EXPENSE && (
+            <AddExpenseDialog
+              currentMonth={calendarMonth}
+              payday={settings.payday}
+              previewFor={(fields) => previewFor(fields)}
+              paycheckLabel={nameOfPaycheck}
+              onAdd={addEnvelope}
+              onClose={() => setOpenForm(null)}
+            />
+          )}
         </main>
       )}
     </div>

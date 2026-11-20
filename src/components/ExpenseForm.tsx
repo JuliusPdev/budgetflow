@@ -1,5 +1,6 @@
 import { useId, useState, type FormEvent } from 'react';
 import { DEFAULT_PAYDAY, fundingMonth, paycheckDates } from '../engine/timing';
+import type { ExpensePreview } from '../engine/expensePreview';
 import type { ExpenseFields, Month } from '../engine/types';
 import { formatDayShort } from '../utils/format';
 import {
@@ -10,6 +11,7 @@ import {
   type DraftErrors,
   type DraftField,
 } from '../utils/expenseDraft';
+import { ExpenseImpact } from './ExpenseImpact';
 
 interface ExpenseFormProps {
   /** The expense being edited; leave out to add a new one. */
@@ -20,10 +22,23 @@ interface ExpenseFormProps {
   submitLabel: string;
   onSave: (fields: ExpenseFields) => void;
   onCancel: () => void;
+  /** What saving these fields would change; shown live while you type. */
+  previewFor?: (fields: ExpenseFields) => ExpensePreview;
+  /** How a paycheck is named in the preview, e.g. "21 Dec". */
+  paycheckLabel?: (month: Month) => string;
 }
 
 /** Add or edit one expense. Nothing is saved until the draft passes its checks. */
-export function ExpenseForm({ initial, currentMonth, payday, submitLabel, onSave, onCancel }: ExpenseFormProps) {
+export function ExpenseForm({
+  initial,
+  currentMonth,
+  payday,
+  submitLabel,
+  onSave,
+  onCancel,
+  previewFor,
+  paycheckLabel,
+}: ExpenseFormProps) {
   const [draft, setDraft] = useState<Draft>(() => draftFrom(initial, currentMonth));
   const [errors, setErrors] = useState<DraftErrors>({});
   const formId = useId();
@@ -37,6 +52,11 @@ export function ExpenseForm({ initial, currentMonth, payday, submitLabel, onSave
     // Editing a field clears its message; the next save checks again.
     setErrors((current) => ({ ...current, [field]: undefined }));
   }
+
+  // Checked quietly on every keystroke: once the draft is complete, the preview
+  // shows what it would change. Messages only appear when you press save.
+  const complete = validateDraft(draft);
+  const preview = previewFor !== undefined && complete.ok ? previewFor(complete.fields) : null;
 
   function handleSubmit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
@@ -180,6 +200,16 @@ export function ExpenseForm({ initial, currentMonth, payday, submitLabel, onSave
             onChange={(event) => setField('paidMonth', event.target.value)}
           />
           {errorFor('paidMonth')}
+        </div>
+      )}
+
+      {previewFor !== undefined && paycheckLabel !== undefined && (
+        <div className="field--wide">
+          <ExpenseImpact
+            preview={preview}
+            paycheckLabel={paycheckLabel}
+            unit={payday === DEFAULT_PAYDAY ? 'month' : 'paycheck'}
+          />
         </div>
       )}
 

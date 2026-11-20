@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import type { ExpensePreview } from '../engine/expensePreview';
 import type { FillUpView } from '../engine/fillUp';
 import type { Cents, Expense, ExpenseFields, Month } from '../engine/types';
 import { fundingMonth, DEFAULT_PAYDAY, paycheckDates } from '../engine/timing';
@@ -13,13 +14,16 @@ interface ExpenseListProps {
   currentMonth: Month;
   /** Day of the month pay arrives. */
   payday: number;
-  onAdd: (fields: ExpenseFields) => void;
   onUpdate: (id: string, fields: ExpenseFields) => void;
   onRemove: (id: string) => void;
   onRestore: (envelope: Expense, index: number) => void;
   /** Which form is open: an envelope id, NEW_EXPENSE, or null. One at a time. */
   openForm: string | null;
   onOpenFormChange: (formKey: string | null) => void;
+  /** What saving an edit would change: the draft replaces the expense with this id. */
+  previewFor?: (fields: ExpenseFields, replaceId: string) => ExpensePreview;
+  /** How a paycheck is named in the preview, e.g. "21 Dec". */
+  paycheckLabel?: (month: Month) => string;
   /** How each expense fills up on one time axis; missing for example data. */
   fillUp?: { view: FillUpView; currentDone: boolean };
 }
@@ -33,12 +37,13 @@ export function ExpenseList({
   sharesById,
   currentMonth,
   payday,
-  onAdd,
   onUpdate,
   onRemove,
   onRestore,
   openForm,
   onOpenFormChange,
+  previewFor,
+  paycheckLabel,
   fillUp,
 }: ExpenseListProps) {
   const [lastDeleted, setLastDeleted] = useState<{ envelope: Expense; index: number } | null>(null);
@@ -145,6 +150,8 @@ export function ExpenseList({
                     currentMonth={currentMonth}
                     payday={payday}
                     submitLabel="Save changes"
+                    previewFor={previewFor === undefined ? undefined : (fields) => previewFor(fields, envelope.id)}
+                    paycheckLabel={paycheckLabel}
                     onSave={(fields) => {
                       onUpdate(envelope.id, fields);
                       onOpenFormChange(null);
@@ -168,24 +175,10 @@ export function ExpenseList({
         )}
       </div>
 
-      {openForm === NEW_EXPENSE ? (
-        <div className="expense-new">
-          <ExpenseForm
-            currentMonth={currentMonth}
-            payday={payday}
-            submitLabel="Add expense"
-            onSave={(fields) => {
-              onAdd(fields);
-              onOpenFormChange(null);
-            }}
-            onCancel={() => onOpenFormChange(null)}
-          />
-        </div>
-      ) : (
-        <button type="button" className="button-primary add-button" onClick={() => openFormFor(NEW_EXPENSE)}>
-          Add an expense
-        </button>
-      )}
+      {/* Opens the add-an-expense dialog, the same one as in the top card. */}
+      <button type="button" className="button-primary add-button" onClick={() => openFormFor(NEW_EXPENSE)}>
+        Add an expense
+      </button>
     </section>
   );
 }
