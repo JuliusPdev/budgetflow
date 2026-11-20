@@ -1,8 +1,10 @@
 import { useState } from 'react';
+import type { FillUpView } from '../engine/fillUp';
 import type { Cents, Expense, ExpenseFields, Month } from '../engine/types';
 import { fundingMonth, DEFAULT_PAYDAY, paycheckDates } from '../engine/timing';
 import { formatDayShort, formatDue, formatEuros, formatMonthShort } from '../utils/format';
 import { ExpenseForm } from './ExpenseForm';
+import { FillUpAxis, FillUpBar } from './FillUpBar';
 
 interface ExpenseListProps {
   envelopes: Expense[];
@@ -18,6 +20,8 @@ interface ExpenseListProps {
   /** Which form is open: an envelope id, NEW_EXPENSE, or null. One at a time. */
   openForm: string | null;
   onOpenFormChange: (formKey: string | null) => void;
+  /** How each expense fills up on one time axis; missing for example data. */
+  fillUp?: { view: FillUpView; currentDone: boolean };
 }
 
 /** The openForm value meaning "the add-an-expense form". */
@@ -35,6 +39,7 @@ export function ExpenseList({
   onRestore,
   openForm,
   onOpenFormChange,
+  fillUp,
 }: ExpenseListProps) {
   const [lastDeleted, setLastDeleted] = useState<{ envelope: Expense; index: number } | null>(null);
 
@@ -85,6 +90,13 @@ export function ExpenseList({
         </p>
       )}
 
+      {/* The month names, once, lined up with the bars in the rows below. */}
+      {byDueMonth.length > 0 && fillUp !== undefined && (
+        <div className="expense-axis">
+          <FillUpAxis view={fillUp.view} />
+        </div>
+      )}
+
       {byDueMonth.length > 0 && (
         <ul className="expense-list">
           {byDueMonth.map((envelope) =>
@@ -110,6 +122,7 @@ export function ExpenseList({
                 onEdit={() => openFormFor(envelope.id)}
                 onDelete={() => handleDelete(envelope)}
                 payday={payday}
+                fillUp={fillUp}
               />
             ),
           )}
@@ -145,23 +158,34 @@ interface ExpenseRowProps {
   payday: number;
   onEdit: () => void;
   onDelete: () => void;
+  fillUp: ExpenseListProps['fillUp'];
 }
 
-function ExpenseRow({ envelope, shareCents, payday, onEdit, onDelete }: ExpenseRowProps) {
-  const details = [
-    formatEuros(envelope.targetCents),
-    `due ${formatDue(envelope)}`,
-    ...(payday === DEFAULT_PAYDAY ? [] : [`last set-aside ${formatDayShort(paycheckDates(fundingMonth(envelope, payday), payday).last)}`]),
-    ...(shareCents === undefined ? [] : [`${formatEuros(shareCents)} of it in the pot`]),
-  ];
+function ExpenseRow({ envelope, shareCents, payday, onEdit, onDelete, fillUp }: ExpenseRowProps) {
+  const bar = fillUp?.view.rows[envelope.id];
+  // With a bar, its dots already show the paydays, so the text stays short.
+  const details =
+    bar !== undefined
+      ? [formatEuros(envelope.targetCents), `due ${formatDue(envelope)}`, `${formatEuros(bar.inPotCents)}\u00a0in\u00a0pot`]
+      : [
+          formatEuros(envelope.targetCents),
+          `due ${formatDue(envelope)}`,
+          ...(payday === DEFAULT_PAYDAY ? [] : [`last set-aside ${formatDayShort(paycheckDates(fundingMonth(envelope, payday), payday).last)}`]),
+          ...(shareCents === undefined ? [] : [`${formatEuros(shareCents)} of it in the pot`]),
+        ];
   if (envelope.paidMonth !== undefined) details.push(`paid ${formatMonthShort(envelope.paidMonth)}`);
 
   return (
-    <li className="expense-row">
+    <li className={fillUp === undefined ? 'expense-row' : 'expense-row expense-row--with-bar'}>
       <div className="expense-text">
         <p className="expense-name">{envelope.name}</p>
         <p className="expense-details">{details.join(' · ')}</p>
       </div>
+      {fillUp !== undefined && (
+        <div className="expense-bar">
+          {bar !== undefined && <FillUpBar row={bar} view={fillUp.view} currentDone={fillUp.currentDone} />}
+        </div>
+      )}
       <div className="expense-actions">
         <button type="button" className="button-text" onClick={onEdit} aria-label={`Edit ${envelope.name}`}>
           Edit

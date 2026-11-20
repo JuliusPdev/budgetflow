@@ -6,6 +6,8 @@ import { LedgerColumns, LedgerTimeline } from './components/Ledger';
 import { SyncPanel } from './components/SyncPanel';
 import { ThisMonth } from './components/ThisMonth';
 import { dayOfDate, monthOfDate } from './engine/months';
+import { buildColumns } from './engine/columns';
+import { buildFillUpView } from './engine/fillUp';
 import { withShares } from './engine/pot';
 import { potCents } from './engine/savingsLog';
 import { periodStatus, shareByRule } from './engine/period';
@@ -124,6 +126,13 @@ export default function App() {
     () => withShares(envelopes, potShares, currentPaycheck),
     [envelopes, potShares, currentPaycheck],
   );
+  // How each expense fills up, on the same time axis as the Columns view.
+  // Not for example data: the list shows only your own expenses.
+  const fillUpView = useMemo(() => {
+    if (showingExample) return null;
+    const layout = buildColumns(shownPlan, shownEnvelopes, settings.payday, today, period.startIsReal ? period.start : undefined);
+    return layout === null ? null : buildFillUpView(layout, shownEnvelopes);
+  }, [showingExample, shownPlan, shownEnvelopes, settings.payday, today, period.startIsReal, period.start]);
 
   // The timeline reads well on every screen, so it's the default; columns are a choice.
   const [layout, setLayout] = useState<Layout>('timeline');
@@ -265,6 +274,7 @@ export default function App() {
             onRestore={restoreEnvelope}
             openForm={openForm}
             onOpenFormChange={setOpenForm}
+            fillUp={fillUpView === null ? undefined : { view: fillUpView, currentDone: status.openCents === 0 }}
           />
 
           <SyncPanel

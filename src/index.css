@@ -881,6 +881,132 @@ ol {
   font-weight: 400;
 }
 
+/* How each expense fills up: a bar in each row, all on one time axis */
+
+/* Two labels, so this wins over the plain .expense-row (a flex row) further down. */
+.expense-row.expense-row--with-bar,
+.expense-axis {
+  display: grid;
+  grid-template-columns: 15rem minmax(0, 1fr) 9rem;
+  grid-template-areas: 'text bar actions';
+  align-items: center;
+  column-gap: var(--space-4);
+}
+
+.expense-row--with-bar .expense-text {
+  grid-area: text;
+}
+
+.expense-bar,
+.expense-axis .fu-axis {
+  grid-area: bar;
+}
+
+.expense-row--with-bar .expense-actions {
+  grid-area: actions;
+  justify-content: flex-end;
+}
+
+/* The month names, once, above the list. */
+.fu-axis {
+  position: relative;
+  display: block;
+  height: 1.75rem;
+}
+
+.fu-month {
+  position: absolute;
+  bottom: 4px;
+  padding-left: 5px;
+  font-family: var(--font-display);
+  font-size: 1rem;
+  white-space: nowrap;
+}
+
+.fu-bar {
+  position: relative;
+  display: block;
+  height: 28px;
+}
+
+.fu-track,
+.fu-filled,
+.fu-due-month {
+  position: absolute;
+  top: 11px;
+  height: 6px;
+  border-radius: 3px;
+}
+
+.fu-track {
+  background: var(--green-soft);
+}
+
+.fu-filled {
+  background: var(--green);
+}
+
+.fu-due-month {
+  background: var(--terracotta-soft);
+}
+
+.fu-dot,
+.fu-due-day {
+  position: absolute;
+  top: 9px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+/* A planned set-aside: hollow until this paycheck's money is in. */
+.fu-dot {
+  background: var(--paper);
+  border: 1.5px solid var(--green);
+}
+
+.fu-dot.is-done {
+  background: var(--green);
+}
+
+.fu-due-day {
+  margin-left: -5px;
+  background: var(--terracotta);
+}
+
+/* Month lines and today, behind the bar. */
+.fu-line,
+.fu-today {
+  position: absolute;
+  top: -12px;
+  bottom: -12px;
+  width: 0;
+}
+
+.fu-line {
+  border-left: 1px solid var(--line-soft);
+}
+
+.fu-today {
+  border-left: 1px dashed var(--green);
+}
+
+/* Phone: name and buttons on top, the bar full width underneath. */
+@media (max-width: 640px) {
+  .expense-row.expense-row--with-bar {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'text actions'
+      'bar bar';
+    row-gap: var(--space-2);
+  }
+
+  .expense-axis {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: 'bar';
+  }
+}
+
 @media (min-width: 900px) {
   .page {
     padding: var(--space-5) var(--space-5) var(--space-6);
