@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Backup } from './components/Backup';
 import { EmptyStart, ExampleBanner } from './components/ExampleNotice';
 import { ExpenseList, NEW_EXPENSE } from './components/ExpenseList';
-import { LedgerColumns, LedgerRows } from './components/Ledger';
+import { LedgerColumns, LedgerTimeline } from './components/Ledger';
 import { SyncPanel } from './components/SyncPanel';
 import { ThisMonth } from './components/ThisMonth';
 import { dayOfDate, monthOfDate } from './engine/months';
@@ -20,7 +20,6 @@ import { MonthProgress } from './components/MonthProgress';
 import { PaydaySettings } from './components/PaydaySettings';
 import { useAccount } from './hooks/useAccount';
 import { useEnvelopes } from './hooks/useEnvelopes';
-import { useIsWide } from './hooks/useIsWide';
 import { useSync } from './hooks/useSync';
 import { sampleEnvelopes } from './sampleEnvelopes';
 import { createLocalStore } from './storage/envelopeStore';
@@ -28,7 +27,7 @@ import { formatDayShort, formatMonthLong, formatMonthShort, ordinal } from './ut
 import { wholeEuros } from './utils/wholeEuros';
 import { loadHideExamples, saveHideExamples } from './storage/preferences';
 
-type LayoutChoice = 'auto' | 'rows' | 'columns';
+type Layout = 'timeline' | 'columns';
 
 // Created once, outside App: a new store on every redraw would make the
 // loading reflex think the store changed and reload endlessly.
@@ -126,10 +125,8 @@ export default function App() {
     [envelopes, potShares, currentPaycheck],
   );
 
-  // Columns suit a wide screen, rows a phone — unless the user picks one.
-  const isWide = useIsWide();
-  const [layoutChoice, setLayoutChoice] = useState<LayoutChoice>('auto');
-  const layout = layoutChoice === 'auto' ? (isWide ? 'columns' : 'rows') : layoutChoice;
+  // The timeline reads well on every screen, so it's the default; columns are a choice.
+  const [layout, setLayout] = useState<Layout>('timeline');
 
   // Which expense form is open. Kept here, not in the list, because the
   // "Add your first expense" buttons at the top need to open it too.
@@ -209,19 +206,19 @@ export default function App() {
                   {showingExample && <span className="example-tag">Example</span>}
                 </h2>
                 <div className="layout-toggle" role="group" aria-label="Ledger layout">
-                  {(['rows', 'columns'] as const).map((option) => (
+                  {(['timeline', 'columns'] as const).map((option) => (
                     <button
                       key={option}
                       type="button"
                       aria-pressed={layout === option}
-                      onClick={() => setLayoutChoice(option)}
+                      onClick={() => setLayout(option)}
                     >
-                      {option === 'rows' ? 'Rows' : 'Columns'}
+                      {option === 'timeline' ? 'Timeline' : 'Columns'}
                     </button>
                   ))}
                 </div>
               </div>
-              {hasPayday && (
+              {hasPayday && layout === 'columns' && (
                 <p className="field-hint ledger-note">
                   Each month here is one paycheck, paid around the {ordinal(settings.payday)}, named after the
                   month it mostly covers. Underneath: the dates it has to last.
@@ -230,7 +227,7 @@ export default function App() {
               {layout === 'columns' ? (
                 <LedgerColumns plan={shownPlan} envelopes={shownEnvelopes} payday={settings.payday} currentStart={period.startIsReal ? period.start : undefined} />
               ) : (
-                <LedgerRows plan={shownPlan} envelopes={shownEnvelopes} payday={settings.payday} currentStart={period.startIsReal ? period.start : undefined} />
+                <LedgerTimeline plan={shownPlan} envelopes={shownEnvelopes} payday={settings.payday} currentStart={period.startIsReal ? period.start : undefined} today={today} />
               )}
             </section>
           )}

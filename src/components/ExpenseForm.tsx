@@ -1,7 +1,7 @@
 import { useId, useState, type FormEvent } from 'react';
-import { DEFAULT_PAYDAY, fundingMonth, periodMonth } from '../engine/timing';
+import { DEFAULT_PAYDAY, fundingMonth, paycheckDates } from '../engine/timing';
 import type { ExpenseFields, Month } from '../engine/types';
-import { formatMonthLong } from '../utils/format';
+import { formatDayShort } from '../utils/format';
 import {
   DRAFT_FIELD_ORDER,
   draftFrom,
@@ -60,7 +60,7 @@ export function ExpenseForm({ initial, currentMonth, payday, submitLabel, onSave
     };
   }
 
-  /** The ledger month whose set-aside completes this, once the timing is filled in. */
+  /** The day of the last paycheck that puts money toward this, once the timing is filled in. */
   function coveringPaycheck(): string | null {
     const isMonth = draft.dueMode === 'month' && /^\d{4}-\d{2}$/.test(draft.dueMonth);
     const isDay = draft.dueMode === 'date' && /^\d{4}-\d{2}-\d{2}$/.test(draft.dueDate);
@@ -68,7 +68,7 @@ export function ExpenseForm({ initial, currentMonth, payday, submitLabel, onSave
     const timing = isDay
       ? { dueMonth: draft.dueDate.slice(0, 7), dueDate: draft.dueDate }
       : { dueMonth: draft.dueMonth };
-    return formatMonthLong(periodMonth(fundingMonth({ id: '', name: '', targetCents: 0, ...timing }, payday), payday));
+    return formatDayShort(paycheckDates(fundingMonth({ id: '', name: '', targetCents: 0, ...timing }, payday), payday).last);
   }
 
   function errorFor(field: DraftField) {
@@ -151,7 +151,7 @@ export function ExpenseForm({ initial, currentMonth, payday, submitLabel, onSave
           </>
         )}
         {payday !== DEFAULT_PAYDAY && coveringPaycheck() !== null && (
-          <p className="field-hint due-paycheck">Saved up by {coveringPaycheck()}</p>
+          <p className="field-hint due-paycheck">Last set-aside on {coveringPaycheck()}</p>
         )}
       </fieldset>
 

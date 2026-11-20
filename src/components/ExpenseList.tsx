@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { Cents, Expense, ExpenseFields, Month } from '../engine/types';
-import { fundingMonth, DEFAULT_PAYDAY, periodMonth } from '../engine/timing';
-import { formatDue, formatEuros, formatMonthShort } from '../utils/format';
+import { fundingMonth, DEFAULT_PAYDAY, paycheckDates } from '../engine/timing';
+import { formatDayShort, formatDue, formatEuros, formatMonthShort } from '../utils/format';
 import { ExpenseForm } from './ExpenseForm';
 
 interface ExpenseListProps {
@@ -151,7 +151,7 @@ function ExpenseRow({ envelope, shareCents, payday, onEdit, onDelete }: ExpenseR
   const details = [
     formatEuros(envelope.targetCents),
     `due ${formatDue(envelope)}`,
-    ...(payday === DEFAULT_PAYDAY ? [] : [`saved up by ${formatMonthShort(periodMonth(fundingMonth(envelope, payday), payday))}`]),
+    ...(payday === DEFAULT_PAYDAY ? [] : [`last set-aside ${formatDayShort(paycheckDates(fundingMonth(envelope, payday), payday).last)}`]),
     ...(shareCents === undefined ? [] : [`${formatEuros(shareCents)} of it in the pot`]),
   ];
   if (envelope.paidMonth !== undefined) details.push(`paid ${formatMonthShort(envelope.paidMonth)}`);

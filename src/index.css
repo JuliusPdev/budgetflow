@@ -10,7 +10,6 @@
   --dim: #6b6a5e;
   --line: #ddd5c4;
   --line-soft: #e8e1d2;
-  --rule: rgba(47, 93, 80, 0.05);
 
   /* Meaning */
   --green: #2f5d50; /* saving */
@@ -49,14 +48,6 @@ body {
   line-height: 1.5;
   color: var(--ink);
   background-color: var(--paper);
-  /* Faint ruled lines, like a notebook page. */
-  background-image: repeating-linear-gradient(
-    to bottom,
-    transparent 0,
-    transparent 31px,
-    var(--rule) 31px,
-    var(--rule) 32px
-  );
   -webkit-font-smoothing: antialiased;
 }
 
@@ -495,35 +486,177 @@ ol {
   background: var(--green);
 }
 
-/* Rows (phone) */
+/* Timeline: events on their real days, months in the margin, paychecks as bands */
 
-.ledger-rows {
+.timeline {
+  --tl-gutter: 4.5rem;
+  --tl-date: 4.5rem;
   border-top: 1px solid var(--ink);
-}
-
-.ledger-row {
-  padding: var(--space-3) 0;
-  border-bottom: 1px solid var(--line);
   animation: row-in 300ms var(--ease-out) both;
 }
 
-.ledger-row.is-current {
-  margin: 0 calc(var(--space-3) * -1);
-  padding-left: var(--space-3);
-  padding-right: var(--space-3);
-  background: var(--green-soft);
+.tl-row {
+  display: grid;
+  grid-template-columns: var(--tl-gutter) 6px minmax(0, 1fr);
+  column-gap: var(--space-3);
 }
 
-.ledger-row-head {
+/* The band column: one stripe per paycheck, with a small gap between paychecks. */
+.tl-band-cell {
+  align-self: stretch;
+}
+
+.tl-band {
+  background: var(--line);
+}
+
+.tl-band.is-current {
+  background: var(--green);
+}
+
+.tl-band.is-start {
+  margin-top: var(--space-2);
+  border-top-left-radius: 3px;
+  border-top-right-radius: 3px;
+}
+
+.tl-band.is-end {
+  margin-bottom: var(--space-2);
+  border-bottom-left-radius: 3px;
+  border-bottom-right-radius: 3px;
+}
+
+/*
+ * Where a month begins: a thin line across the margin and the events (not the
+ * band). The row itself has no height; the month's name hangs below the line,
+ * in the margin beside the month's first event.
+ */
+.tl-month {
+  height: 0;
+  margin: 0;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--line);
+  font-family: var(--font-display);
+  font-size: 1.125rem;
+  font-weight: 400;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.tl-month-line {
+  border-top: 1px solid var(--line);
+}
+
+.tl-month-row:first-child .tl-month,
+.tl-month-row:first-child .tl-month-line {
+  border-top: 0;
+}
+
+/* A paycheck that ends just after a month begins still shows it reaches into that month. */
+.tl-month-row:has(.tl-band.is-end) {
+  min-height: var(--space-4);
+}
+
+/* The year, small under the month name: on the first month and each new year. */
+.tl-year {
+  display: block;
+  font-family: var(--font-body);
+  font-size: 0.75rem;
+  color: var(--dim);
+}
+
+.tl-content {
+  display: grid;
+  grid-template-columns: var(--tl-date) minmax(0, 1fr);
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+}
+
+.tl-date {
+  font-size: 0.875rem;
+  color: var(--dim);
+  padding-top: 2px;
+}
+
+.tl-body {
+  display: grid;
+}
+
+.tl-head {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
   gap: var(--space-3);
+  font-weight: 500;
 }
 
-.ledger-month {
-  font-family: var(--font-display);
-  font-size: 1.25rem;
+.tl-head .figures {
+  font-size: 1.0625rem;
+}
+
+.tl-sub {
+  margin-top: 2px;
+  font-size: 0.75rem;
+  color: var(--dim);
+}
+
+.tl-tag {
+  display: inline-block;
+  white-space: nowrap;
+  margin-left: var(--space-2);
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--green);
+}
+
+.tl-out .tl-head {
+  color: var(--terracotta);
+}
+
+.tl-today .tl-content {
+  align-items: center;
+  color: var(--green);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.tl-today .tl-date {
+  color: var(--green);
+  padding-top: 0;
+}
+
+/* The end of the current paycheck: quiet, only there so its band runs past today. */
+.tl-end .tl-content {
+  align-items: baseline;
+}
+
+.tl-end .tl-sub {
+  margin-top: 0;
+  font-size: 0.8125rem;
+}
+
+/* A dashed rule after the label marks "you are here". */
+.tl-today-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.tl-today-label::after {
+  content: '';
+  flex: 1;
+  border-top: 1px dashed var(--green);
+}
+
+@media (max-width: 480px) {
+  .timeline {
+    --tl-gutter: 2.75rem;
+    --tl-date: 3.5rem;
+  }
+
+  .tl-row {
+    column-gap: var(--space-2);
+  }
 }
 
 .period-name {
@@ -553,33 +686,18 @@ ol {
   font-size: 1.125rem;
 }
 
-.ledger-amount {
-  font-size: 1.125rem;
-  font-weight: 500;
-}
-
-.ledger-for,
-.ledger-bills {
+.ledger-for {
   display: grid;
   gap: var(--space-1);
   margin-top: var(--space-2);
   font-size: 0.875rem;
 }
 
-.ledger-for li,
-.ledger-bills li {
+.ledger-for-line {
   display: flex;
   justify-content: space-between;
   gap: var(--space-3);
-}
-
-.ledger-for li {
   color: var(--ink-soft);
-}
-
-.ledger-bills li {
-  color: var(--terracotta);
-  font-weight: 500;
 }
 
 @keyframes row-in {
@@ -1307,7 +1425,7 @@ ol {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ledger-row {
+  .timeline {
     animation: none;
   }
 

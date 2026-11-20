@@ -1,8 +1,9 @@
 import type { MonthPlan } from '../engine/plan';
 import type { Cents, Envelope } from '../engine/types';
+import { buildTimeline } from '../engine/timeline';
 import { periodMonth } from '../engine/timing';
 import type { Day, Month } from '../engine/types';
-import { formatDayShort, formatEuros, formatMonthShort, formatPeriod } from '../utils/format';
+import { formatDayShort, formatEuros, formatMonthLong, formatMonthShort, formatPeriod } from '../utils/format';
 
 // Two arrangements of the same plan. They only lay numbers out differently —
 // every number comes straight from the engine, so switching can't change one.
@@ -46,45 +47,134 @@ function sumOf(amounts: Record<string, Cents>): Cents {
   return Object.values(amounts).reduce((total, amount) => total + amount, 0);
 }
 
-/** Phone layout: one block per month, read top to bottom like a statement. */
-export function LedgerRows({ plan, envelopes, payday, currentStart }: LedgerProps) {
+/** "Nov" in the margin, with the year small underneath on the first month and at each new year. */
+function GutterLabel({ month, isFirst }: { month: Month; isFirst: boolean }) {
+  const [name, year] = formatMonthShort(month).split(' ');
+  return (
+    <>
+      {name}
+      {(isFirst || month.endsWith('-01')) && <span className="tl-year">{year}</span>}
+    </>
+  );
+}
+
+/**
+ * The plan as a diary, read top to bottom: events on their real days, month
+ * names in the left margin where each month begins, and a band per paycheck
+ * beside them. The band of the paycheck you're living on is green.
+ */
+export function LedgerTimeline({ plan, envelopes, payday, currentStart, today }: LedgerProps & { today: Day }) {
   const nameOf = nameLookup(envelopes);
-  const billOf = billLookup(envelopes);
+  const rows = buildTimeline(plan, envelopes, payday, today, currentStart);
+  const currentBand = plan[0]?.month;
+
+  /** A band's look in this row: whether it starts or ends here, and if it's the current one. */
+  function bandClass(index: number): string {
+    const { band } = rows[index];
+    if (band === undefined) return 'tl-band-cell';
+    return [
+      'tl-band-cell tl-band',
+      band === currentBand ? 'is-current' : '',
+      rows[index - 1]?.band !== band ? 'is-start' : '',
+      rows[index + 1]?.band !== band ? 'is-end' : '',
+    ]
+      .filter(Boolean)
+      .join(' ');
+  }
 
   return (
-    <ol className="ledger-rows">
-      {plan.map((monthPlan, index) => {
-        const bills = Object.entries(monthPlan.billsOut);
-        return (
-          <li
-            key={monthPlan.month}
-            className={index === 0 ? 'ledger-row is-current' : 'ledger-row'}
-            style={{ animationDelay: `${index * 30}ms` }}
-          >
-            <div className="ledger-row-head">
-              <span className="ledger-month">
-                <PeriodName month={monthPlan.month} payday={payday} realStart={index === 0 ? currentStart : undefined} />
+    <ol className="timeline">
+      {rows.map(({ event }, index) => {
+        const band = <span className={bandClass(index)} aria-hidden="true" />;
+
+        if (event.kind === 'month-start') {
+          return (
+            <li key={`month-${event.month}`} className="tl-row tl-month-row">
+              <h3 className="tl-month">
+                <span className="sr-only">{formatMonthLong(event.month)}</span>
+                <span aria-hidden="true">
+                  <GutterLabel month={event.month} isFirst={index === 0} />
+                </span>
+              </h3>
+              {band}
+              <span className="tl-month-line" />
+            </li>
+          );
+        }
+
+        if (event.kind === 'today') {
+          return (
+            <li key="today" className="tl-row tl-today">
+              <span />
+              {band}
+              <span className="tl-content">
+                <span className="tl-date">{formatDayShort(event.date)}</span>
+                <span className="tl-today-label">Today</span>
               </span>
-              <span className="ledger-amount figures">{formatEuros(monthPlan.totalCents)}</span>
-            </div>
-            <ul className="ledger-for">
-              {Object.entries(monthPlan.byEnvelope).map(([id, cents]) => (
-                <li key={id}>
-                  <span>{nameOf(id)}</span>
-                  <span className="figures">{formatEuros(cents)}</span>
-                </li>
-              ))}
-            </ul>
-            {bills.length > 0 && (
-              <ul className="ledger-bills" aria-label="Going out">
-                {bills.map(([id, cents]) => (
-                  <li key={id}>
-                    <span>Going out · {billOf(id)}</span>
-                    <span className="figures">−{formatEuros(cents)}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
+            </li>
+          );
+        }
+
+        if (event.kind === 'paycheck-end') {
+          return (
+            <li key="paycheck-end" className="tl-row tl-end">
+              <span />
+              {band}
+              <span className="tl-content">
+                <span className="tl-date">{formatDayShort(event.date)}</span>
+                <span className="tl-sub">
+                  Last day of this paycheck · {event.daysLeft === 1 ? '1 day' : `${event.daysLeft} days`} left
+                </span>
+              </span>
+            </li>
+          );
+        }
+
+        if (event.kind === 'set-aside') {
+          const dates = formatPeriod(event.paycheck, payday, event.isCurrent ? currentStart : undefined);
+          return (
+            <li key={`in-${event.paycheck}`} className="tl-row tl-in">
+              <span />
+              {band}
+              <span className="tl-content">
+                <span className="tl-date">{formatDayShort(event.date)}</span>
+                <span className="tl-body">
+                  <span className="tl-head">
+                    <span>
+                      Put aside
+                      {event.isCurrent && <span className="tl-tag">This paycheck</span>}
+                    </span>
+                    <span className="figures">{formatEuros(event.amountCents)}</span>
+                  </span>
+                  {dates !== null && <span className="tl-sub">Paycheck · {dates}</span>}
+                  <span className="ledger-for">
+                    {Object.entries(event.byEnvelope).map(([id, cents]) => (
+                      <span key={id} className="ledger-for-line">
+                        <span>{nameOf(id)}</span>
+                        <span className="figures">{formatEuros(cents)}</span>
+                      </span>
+                    ))}
+                  </span>
+                </span>
+              </span>
+            </li>
+          );
+        }
+
+        return (
+          <li key={`out-${event.envelopeId}`} className="tl-row tl-out">
+            <span />
+            {band}
+            <span className="tl-content">
+              <span className="tl-date">{event.date === undefined ? 'Any day' : formatDayShort(event.date)}</span>
+              <span className="tl-body">
+                <span className="tl-head">
+                  <span>{nameOf(event.envelopeId)}</span>
+                  <span className="figures">−{formatEuros(event.amountCents)}</span>
+                </span>
+                {event.isPaid && <span className="tl-sub">Already paid · being put back</span>}
+              </span>
+            </span>
           </li>
         );
       })}
