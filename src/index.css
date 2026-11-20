@@ -898,13 +898,56 @@ ol {
 }
 
 .expense-bar,
-.expense-axis .fu-axis {
+.expense-axis .fu-scroll--axis {
   grid-area: bar;
 }
 
 .expense-row--with-bar .expense-actions {
   grid-area: actions;
   justify-content: flex-end;
+}
+
+/*
+ * Sideways scrolling: each paycheck gets at least 5rem, so a far-away expense
+ * makes the bars wider than the space and they scroll, all together (see
+ * ExpenseList). Only the month row shows a scrollbar; bars scroll by swipe.
+ */
+.fu-scroll {
+  display: block;
+  min-width: 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+
+.fu-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.fu-scroll--axis {
+  padding-bottom: 6px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+
+.fu-scroll--axis::-webkit-scrollbar {
+  display: block;
+  height: 6px;
+}
+
+.fu-scroll--axis::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: var(--line);
+}
+
+.fu-scroll--axis:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 2px;
+}
+
+.fu-axis,
+.fu-bar {
+  width: max(100%, calc(var(--paychecks) * 5rem));
 }
 
 /* The month names, once, above the list. */
@@ -978,8 +1021,8 @@ ol {
 .fu-line,
 .fu-today {
   position: absolute;
-  top: -12px;
-  bottom: -12px;
+  top: 0;
+  bottom: 0;
   width: 0;
 }
 

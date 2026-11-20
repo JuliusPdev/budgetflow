@@ -56,6 +56,7 @@ describe('how each expense fills up', () => {
     if (layout === null) throw new Error('no layout');
     const view = buildFillUpView(layout, [gifts, trip]);
     expect(Object.keys(view.rows)).toEqual(['gifts', 'trip']);
+    expect(view.paychecks).toBe(4);
     // 1 Nov: 11 of 31 days into the first of four paychecks.
     expect(round(view.monthLines[0].x)).toBe(round(11 / 31 / 4));
     // Today, 20 Nov: the last day of the first paycheck.

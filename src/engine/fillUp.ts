@@ -75,6 +75,8 @@ export interface FillUpView {
   monthLines: { month: string; x: number }[];
   /** Where today is on the ruler. */
   today: number;
+  /** How many paychecks the ruler spans: each needs room, so long plans scroll. */
+  paychecks: number;
 }
 
 /** Everything the expense list needs to draw its bars on one shared time axis. */
@@ -84,5 +86,6 @@ export function buildFillUpView(layout: ColumnsLayout, envelopes: Envelope[]): F
     rows: Object.fromEntries(buildFillUp(layout, envelopes).map((row) => [row.id, row])),
     monthLines: layout.monthLines.map((line) => ({ month: line.month, x: onRuler(line, brickCount) })),
     today: onRuler(layout.today, brickCount),
+    paychecks: brickCount,
   };
 }

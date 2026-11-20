@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import type { FillUpView } from '../engine/fillUp';
 import type { Cents, Expense, ExpenseFields, Month } from '../engine/types';
 import { fundingMonth, DEFAULT_PAYDAY, paycheckDates } from '../engine/timing';
@@ -47,6 +47,39 @@ export function ExpenseList({
     (a, b) => a.dueMonth.localeCompare(b.dueMonth) || a.name.localeCompare(b.name),
   );
 
+  // The bars and the month names scroll sideways as one: like rulers glued
+  // together, moving one moves them all.
+  const scrollArea = useRef<HTMLDivElement>(null);
+
+  function scrollersIn(area: HTMLElement): HTMLElement[] {
+    return [...area.querySelectorAll<HTMLElement>('.fu-scroll')];
+  }
+
+  // Scroll events don't bubble up, so the area listens in the "capture" phase,
+  // on their way down to the bar being scrolled.
+  useEffect(() => {
+    const area = scrollArea.current;
+    if (area === null) return;
+    function followAlong(event: Event): void {
+      const source = event.target;
+      if (area === null || !(source instanceof HTMLElement) || !source.classList.contains('fu-scroll')) return;
+      for (const scroller of scrollersIn(area)) {
+        if (scroller !== source && scroller.scrollLeft !== source.scrollLeft) scroller.scrollLeft = source.scrollLeft;
+      }
+    }
+    area.addEventListener('scroll', followAlong, { capture: true, passive: true });
+    return () => area.removeEventListener('scroll', followAlong, { capture: true });
+  }, []);
+
+  // A bar that appears later (after editing, or a new expense) joins at the same position.
+  useLayoutEffect(() => {
+    const area = scrollArea.current;
+    if (area === null) return;
+    const [axis, ...bars] = scrollersIn(area);
+    if (axis === undefined) return;
+    for (const bar of bars) if (bar.scrollLeft !== axis.scrollLeft) bar.scrollLeft = axis.scrollLeft;
+  });
+
   function openFormFor(formKey: string): void {
     onOpenFormChange(formKey);
     setLastDeleted(null);
@@ -90,44 +123,50 @@ export function ExpenseList({
         </p>
       )}
 
-      {/* The month names, once, lined up with the bars in the rows below. */}
-      {byDueMonth.length > 0 && fillUp !== undefined && (
-        <div className="expense-axis">
-          <FillUpAxis view={fillUp.view} />
-        </div>
-      )}
+      <div
+        ref={scrollArea}
+        // Each paycheck needs room; long plans become wider than the screen and scroll.
+        style={{ '--paychecks': fillUp?.view.paychecks ?? 1 } as CSSProperties}
+      >
+        {/* The month names, once, lined up with the bars in the rows below. */}
+        {byDueMonth.length > 0 && fillUp !== undefined && (
+          <div className="expense-axis">
+            <FillUpAxis view={fillUp.view} />
+          </div>
+        )}
 
-      {byDueMonth.length > 0 && (
-        <ul className="expense-list">
-          {byDueMonth.map((envelope) =>
-            openForm === envelope.id ? (
-              <li key={envelope.id} className="expense-row expense-row--editing">
-                <ExpenseForm
-                  initial={envelope}
-                  currentMonth={currentMonth}
+        {byDueMonth.length > 0 && (
+          <ul className="expense-list">
+            {byDueMonth.map((envelope) =>
+              openForm === envelope.id ? (
+                <li key={envelope.id} className="expense-row expense-row--editing">
+                  <ExpenseForm
+                    initial={envelope}
+                    currentMonth={currentMonth}
+                    payday={payday}
+                    submitLabel="Save changes"
+                    onSave={(fields) => {
+                      onUpdate(envelope.id, fields);
+                      onOpenFormChange(null);
+                    }}
+                    onCancel={() => onOpenFormChange(null)}
+                  />
+                </li>
+              ) : (
+                <ExpenseRow
+                  key={envelope.id}
+                  envelope={envelope}
+                  shareCents={sharesById[envelope.id]}
+                  onEdit={() => openFormFor(envelope.id)}
+                  onDelete={() => handleDelete(envelope)}
                   payday={payday}
-                  submitLabel="Save changes"
-                  onSave={(fields) => {
-                    onUpdate(envelope.id, fields);
-                    onOpenFormChange(null);
-                  }}
-                  onCancel={() => onOpenFormChange(null)}
+                  fillUp={fillUp}
                 />
-              </li>
-            ) : (
-              <ExpenseRow
-                key={envelope.id}
-                envelope={envelope}
-                shareCents={sharesById[envelope.id]}
-                onEdit={() => openFormFor(envelope.id)}
-                onDelete={() => handleDelete(envelope)}
-                payday={payday}
-                fillUp={fillUp}
-              />
-            ),
-          )}
-        </ul>
-      )}
+              ),
+            )}
+          </ul>
+        )}
+      </div>
 
       {openForm === NEW_EXPENSE ? (
         <div className="expense-new">
@@ -166,11 +205,19 @@ function ExpenseRow({ envelope, shareCents, payday, onEdit, onDelete, fillUp }: 
   // With a bar, its dots already show the paydays, so the text stays short.
   const details =
     bar !== undefined
-      ? [formatEuros(envelope.targetCents), `due ${formatDue(envelope)}`, `${formatEuros(bar.inPotCents)}\u00a0in\u00a0pot`]
+      ? [
+          formatEuros(envelope.targetCents),
+          `due ${formatDue(envelope)}`,
+          `${formatEuros(bar.inPotCents)}\u00a0in\u00a0pot`,
+        ]
       : [
           formatEuros(envelope.targetCents),
           `due ${formatDue(envelope)}`,
-          ...(payday === DEFAULT_PAYDAY ? [] : [`last set-aside ${formatDayShort(paycheckDates(fundingMonth(envelope, payday), payday).last)}`]),
+          ...(payday === DEFAULT_PAYDAY
+            ? []
+            : [
+                `last set-aside ${formatDayShort(paycheckDates(fundingMonth(envelope, payday), payday).last)}`,
+              ]),
           ...(shareCents === undefined ? [] : [`${formatEuros(shareCents)} of it in the pot`]),
         ];
   if (envelope.paidMonth !== undefined) details.push(`paid ${formatMonthShort(envelope.paidMonth)}`);
