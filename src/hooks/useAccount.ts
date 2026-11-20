@@ -64,8 +64,9 @@ export function useAccount() {
     return error === null ? null : friendlySignInError(error);
   }
 
+  /** Signs out here only: your other devices stay signed in and keep syncing. */
   async function signOut(): Promise<void> {
-    await supabase.auth.signOut();
+    await supabase.auth.signOut({ scope: 'local' });
   }
 
   return { account, linkError, sendLink, signOut };

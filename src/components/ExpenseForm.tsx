@@ -1,5 +1,5 @@
-import { useId, useRef, useState, type FormEvent } from 'react';
-import { DEFAULT_PAYDAY, fundingMonth } from '../engine/timing';
+import { useId, useState, type FormEvent } from 'react';
+import { DEFAULT_PAYDAY, fundingMonth, periodMonth } from '../engine/timing';
 import type { ExpenseFields, Month } from '../engine/types';
 import { formatMonthLong } from '../utils/format';
 import {
@@ -27,8 +27,6 @@ export function ExpenseForm({ initial, currentMonth, payday, submitLabel, onSave
   const [draft, setDraft] = useState<Draft>(() => draftFrom(initial, currentMonth));
   const [errors, setErrors] = useState<DraftErrors>({});
   const formId = useId();
-  // Bookmarks to the input boxes, so the cursor can jump to the first problem.
-  const inputRefs = useRef<Partial<Record<DraftField, HTMLInputElement | null>>>({});
 
   function fieldId(field: DraftField): string {
     return `${formId}-${field}`;
@@ -46,25 +44,23 @@ export function ExpenseForm({ initial, currentMonth, payday, submitLabel, onSave
     if (!result.ok) {
       setErrors(result.errors);
       const firstProblem = DRAFT_FIELD_ORDER.find((field) => result.errors[field] !== undefined);
-      if (firstProblem !== undefined) inputRefs.current[firstProblem]?.focus();
+      // Found by its id when you submit, so the cursor can jump to the first problem.
+      if (firstProblem !== undefined) document.getElementById(fieldId(firstProblem))?.focus();
       return;
     }
     onSave(result.fields);
   }
 
-  /** Shared wiring for a text-like input: id, error state, and its bookmark. */
+  /** Shared wiring for a text-like input: id and error state. */
   function inputProps(field: DraftField) {
     return {
       id: fieldId(field),
       'aria-invalid': errors[field] !== undefined,
       'aria-describedby': errors[field] !== undefined ? `${fieldId(field)}-error` : undefined,
-      ref: (element: HTMLInputElement | null) => {
-        inputRefs.current[field] = element;
-      },
     };
   }
 
-  /** Which paycheck will pay for this, once the timing is filled in. */
+  /** The ledger month whose set-aside completes this, once the timing is filled in. */
   function coveringPaycheck(): string | null {
     const isMonth = draft.dueMode === 'month' && /^\d{4}-\d{2}$/.test(draft.dueMonth);
     const isDay = draft.dueMode === 'date' && /^\d{4}-\d{2}-\d{2}$/.test(draft.dueDate);
@@ -72,7 +68,7 @@ export function ExpenseForm({ initial, currentMonth, payday, submitLabel, onSave
     const timing = isDay
       ? { dueMonth: draft.dueDate.slice(0, 7), dueDate: draft.dueDate }
       : { dueMonth: draft.dueMonth };
-    return formatMonthLong(fundingMonth({ id: '', name: '', targetCents: 0, ...timing }, payday));
+    return formatMonthLong(periodMonth(fundingMonth({ id: '', name: '', targetCents: 0, ...timing }, payday), payday));
   }
 
   function errorFor(field: DraftField) {
@@ -155,7 +151,7 @@ export function ExpenseForm({ initial, currentMonth, payday, submitLabel, onSave
           </>
         )}
         {payday !== DEFAULT_PAYDAY && coveringPaycheck() !== null && (
-          <p className="field-hint due-paycheck">Paid from your {coveringPaycheck()} paycheck</p>
+          <p className="field-hint due-paycheck">Saved up by {coveringPaycheck()}</p>
         )}
       </fieldset>
 
