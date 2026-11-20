@@ -659,33 +659,6 @@ ol {
   }
 }
 
-.period-name {
-  display: inline-flex;
-  flex-direction: column;
-  line-height: 1.2;
-}
-
-.period-month {
-  font-family: var(--font-display);
-}
-
-/* The savings period: smaller and quieter, so the month reads first. */
-.period-dates {
-  margin-top: 2px;
-  font-family: var(--font-body);
-  font-size: 0.75rem;
-  font-weight: 400;
-  color: var(--dim);
-}
-
-.ledger-table thead .period-name {
-  align-items: flex-end;
-}
-
-.ledger-table thead .period-month {
-  font-size: 1.125rem;
-}
-
 .ledger-for {
   display: grid;
   gap: var(--space-1);
@@ -711,72 +684,199 @@ ol {
   }
 }
 
-/* Columns (computer) */
+/* Columns: one equally wide column per paycheck, drawn as calmly as the timeline */
 
 .ledger-scroll {
   overflow-x: auto;
   border-top: 1px solid var(--ink);
 }
 
-.ledger-table {
-  width: 100%;
-  border-collapse: collapse;
+.planner {
+  --planner-labels: 7.5rem;
+  display: grid;
+  min-width: min-content;
   font-size: 0.875rem;
+  animation: row-in 300ms var(--ease-out) both;
 }
 
-.ledger-table th,
-.ledger-table td {
-  padding: 10px 12px;
-  text-align: right;
+.planner-labels,
+.planner-brick {
+  display: grid;
+  grid-template-rows: subgrid;
+  /* From the first row line to the last: the planner sets how many rows there are. */
+  grid-row: 1 / -1;
+}
+
+/* Rows are set apart by space only, no lines, as in the timeline. */
+.pl-cell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 2rem;
   white-space: nowrap;
-  border-bottom: 1px solid var(--line-soft);
 }
 
-.ledger-table thead th {
+.pl-months {
+  min-height: 2.25rem;
+  align-items: flex-end;
+  padding-bottom: 4px;
   font-family: var(--font-display);
-  font-size: 1rem;
-  font-weight: 500;
-  border-bottom: 1px solid var(--line);
+  font-size: 1.125rem;
+  color: var(--ink);
 }
 
-.ledger-table .ledger-goal-col {
+/* The paycheck: a slim band with its dates small underneath. */
+.pl-head {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 6px;
+  min-height: 2.75rem;
+  padding: var(--space-2) 0 var(--space-2);
+}
+
+.pl-band {
+  height: 6px;
+  margin-right: 6px;
+  border-radius: 3px;
+  background: var(--line);
+}
+
+.planner-brick.is-current .pl-band {
+  background: var(--green);
+}
+
+.pl-head-text {
+  display: inline-flex;
+  gap: var(--space-2);
+  font-size: 0.75rem;
+  color: var(--dim);
+}
+
+.pl-now {
+  font-weight: 500;
+  color: var(--green);
+}
+
+.pl-goal {
+  color: var(--ink-soft);
+}
+
+.pl-total {
+  margin-top: var(--space-1);
+  font-weight: 600;
+  color: var(--green);
+}
+
+.pl-out {
+  min-height: 3.75rem;
+  margin-top: var(--space-2);
+  color: var(--terracotta);
+}
+
+.pl-foot {
+  min-height: 1.5rem;
+}
+
+/* The names on the left stay put while the paychecks scroll. */
+.planner-labels {
   position: sticky;
   left: 0;
-  z-index: 1;
-  min-width: 180px;
-  text-align: left;
-  font-family: var(--font-body);
-  font-size: 0.875rem;
-  font-weight: 500;
+  z-index: 2;
   background: var(--paper);
 }
 
-.ledger-table .is-current {
-  background: var(--green-soft);
+.planner-labels .pl-cell {
+  padding-right: var(--space-3);
 }
 
-.ledger-table .empty {
-  color: var(--line);
+.planner-labels .pl-goal {
+  color: var(--ink-soft);
 }
 
-.ledger-total th,
-.ledger-total td {
-  font-weight: 600;
+.planner-labels .pl-total,
+.planner-labels .pl-out {
+  font-weight: 500;
+}
+
+.planner-brick {
+  position: relative;
+}
+
+/* Money goes in on payday: the amounts start at the band's left end. */
+.planner-brick .pl-goal,
+.planner-brick .pl-total {
+  padding-left: 2px;
+}
+
+/* Where a month begins: its name above, a thin line down through the column. */
+.pl-month-name {
+  position: absolute;
+  bottom: 4px;
+  padding-left: 6px;
+}
+
+.pl-month-line,
+.pl-today-line {
+  position: absolute;
+  /* Below the month names and the paycheck bands, so no line cuts through them. */
+  top: 5rem;
+  bottom: 1.5rem;
+  width: 0;
+  pointer-events: none;
+}
+
+.pl-month-line {
+  border-left: 1px solid var(--line-soft);
+}
+
+.pl-today-line {
+  border-left: 1px dashed var(--green);
+}
+
+.pl-today-label {
+  position: absolute;
+  top: 2px;
+  transform: translateX(-50%);
+  font-size: 0.75rem;
+  font-weight: 500;
   color: var(--green);
-  border-top: 1px solid var(--ink);
-  border-bottom: 1px solid var(--line);
 }
 
-.ledger-going-out th,
-.ledger-going-out td {
-  color: var(--terracotta);
-  vertical-align: top;
+/* Bills on their real day: a dot for one day, a thin bar for "any day in the month". */
+.pl-bill-dot,
+.pl-bill-bar {
+  position: absolute;
+  top: 8px;
+  height: 6px;
 }
 
-.bill-names {
-  display: block;
-  margin-top: 2px;
-  font-family: var(--font-body);
+.pl-bill-dot {
+  width: 8px;
+  height: 8px;
+  top: 7px;
+  margin-left: -4px;
+  border-radius: 50%;
+  background: var(--terracotta);
+}
+
+.pl-bill-bar {
+  margin-left: 2px;
+  border-radius: 3px;
+  background: var(--terracotta-soft);
+}
+
+.pl-bill-label {
+  position: absolute;
+  top: 20px;
+  z-index: 1;
+  display: grid;
+  padding-left: 2px;
+  line-height: 1.3;
+  font-weight: 500;
+}
+
+.pl-bill-names {
   font-size: 0.75rem;
   font-weight: 400;
 }

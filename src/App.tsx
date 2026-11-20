@@ -220,12 +220,12 @@ export default function App() {
               </div>
               {hasPayday && layout === 'columns' && (
                 <p className="field-hint ledger-note">
-                  Each month here is one paycheck, paid around the {ordinal(settings.payday)}, named after the
-                  month it mostly covers. Underneath: the dates it has to last.
+                  Each column is one paycheck, from payday (around the {ordinal(settings.payday)}) to the next.
+                  Money is put aside at its left edge; thin lines show where a month begins.
                 </p>
               )}
               {layout === 'columns' ? (
-                <LedgerColumns plan={shownPlan} envelopes={shownEnvelopes} payday={settings.payday} currentStart={period.startIsReal ? period.start : undefined} />
+                <LedgerColumns plan={shownPlan} envelopes={shownEnvelopes} payday={settings.payday} currentStart={period.startIsReal ? period.start : undefined} today={today} />
               ) : (
                 <LedgerTimeline plan={shownPlan} envelopes={shownEnvelopes} payday={settings.payday} currentStart={period.startIsReal ? period.start : undefined} today={today} />
               )}

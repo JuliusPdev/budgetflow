@@ -1,8 +1,7 @@
 import type { MonthPlan } from '../engine/plan';
-import type { Cents, Envelope } from '../engine/types';
+import { buildColumns } from '../engine/columns';
 import { buildTimeline } from '../engine/timeline';
-import { periodMonth } from '../engine/timing';
-import type { Day, Month } from '../engine/types';
+import type { Day, Envelope, Month } from '../engine/types';
 import { formatDayShort, formatEuros, formatMonthLong, formatMonthShort, formatPeriod } from '../utils/format';
 
 // Two arrangements of the same plan. They only lay numbers out differently —
@@ -15,36 +14,13 @@ interface LedgerProps {
   payday: number;
   /** When the current period really started, if you recorded its paycheck. */
   currentStart?: Day;
+  /** Today: where the "Today" line goes. */
+  today: Day;
 }
 
 function nameLookup(envelopes: Envelope[]): (id: string) => string {
   const names = new Map(envelopes.map((envelope) => [envelope.id, envelope.name]));
   return (id) => names.get(id) ?? id;
-}
-
-/** A bill's name with its real date when known: "Presents · 5 Dec". */
-function billLookup(envelopes: Envelope[]): (id: string) => string {
-  const byId = new Map(envelopes.map((envelope) => [envelope.id, envelope]));
-  return (id) => {
-    const envelope = byId.get(id);
-    if (envelope === undefined) return id;
-    return envelope.dueDate === undefined ? envelope.name : `${envelope.name} · ${formatDayShort(envelope.dueDate)}`;
-  };
-}
-
-/** A period's name: the month it mostly covers, big, with its payday-to-payday dates small underneath. */
-function PeriodName({ month, payday, realStart }: { month: Month; payday: number; realStart?: Day }) {
-  const dates = formatPeriod(month, payday, realStart);
-  return (
-    <span className="period-name">
-      <span className="period-month">{formatMonthShort(periodMonth(month, payday))}</span>
-      {dates !== null && <span className="period-dates">{dates}</span>}
-    </span>
-  );
-}
-
-function sumOf(amounts: Record<string, Cents>): Cents {
-  return Object.values(amounts).reduce((total, amount) => total + amount, 0);
 }
 
 /** "Nov" in the margin, with the year small underneath on the first month and at each new year. */
@@ -63,7 +39,7 @@ function GutterLabel({ month, isFirst }: { month: Month; isFirst: boolean }) {
  * names in the left margin where each month begins, and a band per paycheck
  * beside them. The band of the paycheck you're living on is green.
  */
-export function LedgerTimeline({ plan, envelopes, payday, currentStart, today }: LedgerProps & { today: Day }) {
+export function LedgerTimeline({ plan, envelopes, payday, currentStart, today }: LedgerProps) {
   const nameOf = nameLookup(envelopes);
   const rows = buildTimeline(plan, envelopes, payday, today, currentStart);
   const currentBand = plan[0]?.month;
@@ -182,84 +158,150 @@ export function LedgerTimeline({ plan, envelopes, payday, currentStart, today }:
   );
 }
 
-/** Computer layout: one row per goal, months running left to right. */
-export function LedgerColumns({ plan, envelopes, payday, currentStart }: LedgerProps) {
-  const billOf = billLookup(envelopes);
+/** "Nov", with the year for the first month and for January: "Jan 2027". */
+function plannerMonth(month: Month, isFirst: boolean): string {
+  return isFirst || month.endsWith('-01') ? formatMonthShort(month) : formatMonthShort(month).split(' ')[0];
+}
+
+/** A spot inside a brick as a CSS position: 0.35 → "35%". */
+function percent(at: number): string {
+  return `${(at * 100).toFixed(2)}%`;
+}
+
+/**
+ * Wide layout, like a wall planner: one equally wide column per paycheck.
+ * Money is put aside at its left edge (payday); dashed lines show where a month
+ * begins; bills sit on their real day in the "Going out" row.
+ */
+export function LedgerColumns({ plan, envelopes, payday, currentStart, today }: LedgerProps) {
+  const layout = buildColumns(plan, envelopes, payday, today, currentStart);
+  if (layout === null) return null;
+  const nameOf = nameLookup(envelopes);
   const goals = [...envelopes]
     .filter((envelope) => plan.some((month) => month.byEnvelope[envelope.id] !== undefined))
-    .sort((a, b) => a.dueMonth.localeCompare(b.dueMonth));
-
-  function cellClass(index: number, extra = ''): string {
-    return [index === 0 ? 'is-current' : '', extra].filter(Boolean).join(' ');
-  }
+    .sort((a, b) => (a.dueDate ?? a.dueMonth).localeCompare(b.dueDate ?? b.dueMonth));
+  // The first month is named at the left edge only if the next month's line leaves room;
+  // otherwise the next month carries the year.
+  const firstLine = layout.monthLines[0];
+  const showFirstMonth = firstLine === undefined || firstLine.brick > 0 || firstLine.at > 0.45;
 
   return (
-    // Wide plans can be wider than the screen; only the table scrolls, never the page.
-    <div className="ledger-scroll" role="region" aria-label="Ledger by month" tabIndex={0}>
-      <table className="ledger-table">
-        <caption className="sr-only">Amount to put aside each month, per goal</caption>
-        <thead>
-          <tr>
-            <th scope="col" className="ledger-goal-col">
-              Goal
-            </th>
-            {plan.map((monthPlan, index) => (
-              <th key={monthPlan.month} scope="col" className={cellClass(index)}>
-                <PeriodName month={monthPlan.month} payday={payday} realStart={index === 0 ? currentStart : undefined} />
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
+    // Long plans are wider than the screen; only the planner scrolls, never the page.
+    <div className="ledger-scroll" role="region" aria-label="Plan by paycheck" tabIndex={0}>
+      <div
+        className="planner"
+        style={{
+          gridTemplateColumns: `var(--planner-labels) repeat(${layout.bricks.length}, minmax(9rem, 1fr))`,
+          // Month names, dates, one row per expense, put aside, going out, today.
+          gridTemplateRows: `repeat(${goals.length + 5}, auto)`,
+        }}
+      >
+        <div className="planner-labels" aria-hidden="true">
+          <span className="pl-cell pl-months" />
+          <span className="pl-cell pl-head" />
           {goals.map((envelope) => (
-            <tr key={envelope.id}>
-              <th scope="row" className="ledger-goal-col">
-                {envelope.name}
-              </th>
-              {plan.map((monthPlan, index) => {
-                const cents = monthPlan.byEnvelope[envelope.id];
+            <span key={envelope.id} className="pl-cell pl-goal">
+              {envelope.name}
+            </span>
+          ))}
+          <span className="pl-cell pl-total">Put aside</span>
+          <span className="pl-cell pl-out">Going out</span>
+          <span className="pl-cell pl-foot" />
+        </div>
+
+        {layout.bricks.map((brick, index) => {
+          const dates = formatPeriod(brick.paycheck, payday, brick.isCurrent ? currentStart : undefined);
+          const lines = layout.monthLines.filter((line) => line.brick === index);
+          // Each bill's stretch inside this brick: a dot for one day, a bar for "any day".
+          const bills = layout.bills.flatMap((bill) => {
+            if (index < bill.start.brick || index > bill.end.brick) return [];
+            const from = index === bill.start.brick ? bill.start.at : 0;
+            const to = index === bill.end.brick ? bill.end.at : 1;
+            return [{ bill, from, to, isFirst: index === bill.start.brick }];
+          });
+          const label = dates === null ? formatMonthLong(brick.paycheck) : `Paycheck ${dates}`;
+
+          return (
+            <section key={brick.paycheck} className={brick.isCurrent ? 'planner-brick is-current' : 'planner-brick'} aria-label={label}>
+              <span className="pl-cell pl-months" aria-hidden="true">
+                {index === 0 && showFirstMonth && (
+                  <span className="pl-month-name" style={{ left: 0 }}>
+                    {plannerMonth(layout.firstMonth, true)}
+                  </span>
+                )}
+                {lines.map((line) => (
+                  <span key={line.month} className="pl-month-name" style={{ left: percent(line.at) }}>
+                    {plannerMonth(line.month, !showFirstMonth && line === firstLine)}
+                  </span>
+                ))}
+              </span>
+              <span className="pl-cell pl-head">
+                {/* The paycheck as a band, like in the timeline: green while you live on it. */}
+                <span className="pl-band" aria-hidden="true" />
+                <span className="pl-head-text">
+                  {dates ?? formatMonthShort(brick.paycheck)}
+                  {brick.isCurrent && <span className="pl-now">Now</span>}
+                </span>
+              </span>
+              {goals.map((envelope) => {
+                const cents = brick.byEnvelope[envelope.id];
                 return (
-                  <td key={monthPlan.month} className={cellClass(index, 'figures')}>
-                    {cents === undefined ? <span className="empty">·</span> : formatEuros(cents)}
-                  </td>
+                  <span key={envelope.id} className="pl-cell pl-goal figures">
+                    {cents !== undefined && (
+                      <>
+                        <span className="sr-only">{envelope.name}: </span>
+                        {formatEuros(cents)}
+                      </>
+                    )}
+                  </span>
                 );
               })}
-            </tr>
-          ))}
-        </tbody>
-        <tfoot>
-          <tr className="ledger-total">
-            <th scope="row" className="ledger-goal-col">
-              Put aside
-            </th>
-            {plan.map((monthPlan, index) => (
-              <td key={monthPlan.month} className={cellClass(index, 'figures')}>
-                {formatEuros(monthPlan.totalCents)}
-              </td>
-            ))}
-          </tr>
-          <tr className="ledger-going-out">
-            <th scope="row" className="ledger-goal-col">
-              Going out
-            </th>
-            {plan.map((monthPlan, index) => {
-              const bills = Object.keys(monthPlan.billsOut);
-              return (
-                <td key={monthPlan.month} className={cellClass(index, 'figures')}>
-                  {bills.length === 0 ? (
-                    <span className="empty">·</span>
-                  ) : (
-                    <>
-                      −{formatEuros(sumOf(monthPlan.billsOut))}
-                      <span className="bill-names">{bills.map(billOf).join(', ')}</span>
-                    </>
-                  )}
-                </td>
-              );
-            })}
-          </tr>
-        </tfoot>
-      </table>
+              <span className="pl-cell pl-total figures">
+                <span className="sr-only">Put aside: </span>
+                {formatEuros(brick.totalCents)}
+              </span>
+              <span className="pl-cell pl-out">
+                {bills.map(({ bill, from, to, isFirst }) => {
+                  const key = `${bill.date ?? bill.month}-${bill.envelopeIds.join('+')}`;
+                  const when = bill.date === undefined ? 'any day' : formatDayShort(bill.date);
+                  return (
+                    <span key={key}>
+                      {bill.date === undefined ? (
+                        <span className="pl-bill-bar" style={{ left: percent(from), width: percent(to - from) }} />
+                      ) : (
+                        <span className="pl-bill-dot" style={{ left: percent(from) }} />
+                      )}
+                      {isFirst && (
+                        <span className="pl-bill-label" style={{ left: percent(from) }}>
+                          <span className="figures">−{formatEuros(bill.amountCents)}</span>
+                          <span className="pl-bill-names">
+                            {bill.envelopeIds.map(nameOf).join(', ')} · {when}
+                          </span>
+                        </span>
+                      )}
+                    </span>
+                  );
+                })}
+              </span>
+              <span className="pl-cell pl-foot" aria-hidden="true">
+                {layout.today.brick === index && (
+                  <span className="pl-today-label" style={{ left: percent(layout.today.at) }}>
+                    Today
+                  </span>
+                )}
+              </span>
+
+              {/* Lines over the whole brick, below the month names. */}
+              {lines.map((line) => (
+                <span key={line.month} className="pl-month-line" style={{ left: percent(line.at) }} aria-hidden="true" />
+              ))}
+              {layout.today.brick === index && (
+                <span className="pl-today-line" style={{ left: percent(layout.today.at) }} aria-hidden="true" />
+              )}
+            </section>
+          );
+        })}
+      </div>
     </div>
   );
 }
