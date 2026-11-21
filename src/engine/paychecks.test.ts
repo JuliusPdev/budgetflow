@@ -23,7 +23,7 @@ describe('which paycheck a press records', () => {
   });
 });
 
-describe('the current savings period', () => {
+describe('the current paycheck', () => {
   it('follows the usual payday until a paycheck is recorded', () => {
     expect(currentPeriod([], '2026-11-17', PAYDAY)).toEqual({
       month: '2026-10',

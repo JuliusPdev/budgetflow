@@ -4,7 +4,7 @@ import type { AdjustmentEntry, BudgetData, Cents, Day, Expense, ExpenseFields, P
 import type { EnvelopeStore } from '../storage/envelopeStore';
 
 /**
- * Your budget — the envelopes and the savings log: loaded from the store on
+ * Your budget — the envelopes and the pot's log: loaded from the store on
  * start, saved back after every change, with actions to change it.
  */
 export function useEnvelopes(store: EnvelopeStore) {
@@ -69,7 +69,7 @@ export function useEnvelopes(store: EnvelopeStore) {
     changeEnvelopes((current) => [...current.slice(0, index), envelope, ...current.slice(index)]);
   }
 
-  /** Records money you moved into savings. Returns the entry's id, for Undo. */
+  /** Records money you put aside into the pot. Returns the entry's id, for Undo. */
   function logSetAside(details: Omit<SetAsideEntry, 'id' | 'kind'>): string {
     // Created outside the update so a re-run update can't hand out a second id.
     const entry: SetAsideEntry = { ...details, id: crypto.randomUUID(), kind: 'set-aside' };
@@ -84,7 +84,7 @@ export function useEnvelopes(store: EnvelopeStore) {
     return entry.id;
   }
 
-  /** Records that your pay arrived, which starts a new savings period. Returns the entry's id, for Undo. */
+  /** Records that your pay arrived, which starts a new paycheck. Returns the entry's id, for Undo. */
   function logPaycheck(details: Omit<PaycheckEntry, 'id' | 'kind'>): string {
     const entry: PaycheckEntry = { ...details, id: crypto.randomUUID(), kind: 'paycheck' };
     setData((current) => ({ ...current, log: [...current.log, entry] }));
@@ -92,7 +92,7 @@ export function useEnvelopes(store: EnvelopeStore) {
   }
 
   /**
-   * Makes the pot match your real savings: records the difference between
+   * Makes the pot match what's really in it: records the difference between
    * what BudgetFlow thinks is there and what you say is there. Returns the
    * entry's id for Undo, or null when nothing needed changing.
    */

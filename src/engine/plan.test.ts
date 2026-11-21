@@ -95,8 +95,8 @@ describe('planSetAside', () => {
       '2026-12',
     );
 
-    // Savings are €400 short now; the laptop bill (€600) arrives in January.
-    // Spreading the €1,000 still owed evenly to March would leave savings short then,
+    // The pot is €400 short now; the laptop bill (€600) arrives in January.
+    // Spreading the €1,000 still owed evenly to March would leave the pot short then,
     // so the full amount comes in before the laptop bill instead.
     expect(totalsOf(plan)).toEqual([50_000, 50_000, 0, 0]);
   });
@@ -112,7 +112,7 @@ describe('planSetAside', () => {
     ]);
   });
 
-  it('shows each bill in the month it leaves savings', () => {
+  it('shows each bill in the month it leaves the pot', () => {
     const plan = planSetAside(
       [
         envelope({ id: 'flights', targetCents: 90_000, dueMonth: '2027-01', savedCents: 30_000, paidMonth: '2026-11' }),

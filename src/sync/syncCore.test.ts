@@ -21,7 +21,7 @@ const PASSPHRASE = 'made-up quiet harbour lantern';
 const trip: Expense = { id: 'trip', name: 'Made-up trip', targetCents: 50_000, dueMonth: '2027-03' };
 const tyres: Expense = { id: 'tyres', name: 'Made-up tyres', targetCents: 40_000, dueMonth: '2027-02' };
 
-/** A budget with these expenses and an empty savings log. */
+/** A budget with these expenses and an empty log. */
 function budget(...envelopes: Expense[]): BudgetData {
   return { envelopes, log: [], settings: { payday: 1 } };
 }

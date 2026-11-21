@@ -2,7 +2,7 @@ import { addMonths } from './months';
 import { paycheckDates, paycheckMonthOf, paydayIn } from './timing';
 import type { Day, LogEntry, Month, PaycheckEntry } from './types';
 
-// Savings periods from when your pay really arrived. Until you record a
+// Paychecks from when your pay really arrived. Until you record a
 // paycheck, periods follow your usual payday. Once you do, a new period starts
 // only when you record the next one: a late paycheck never starts a period
 // early. The usual payday stays as the expected date for reminders and for
@@ -56,7 +56,7 @@ export interface CurrentPeriod {
   nextIsDue: boolean;
 }
 
-/** The savings period you're in on `today`. */
+/** The paycheck you're in on `today`. */
 export function currentPeriod(log: LogEntry[], today: Day, payday: number): CurrentPeriod {
   const recorded = paychecksIn(log).filter((paycheck) => paycheck.date <= today);
   if (recorded.length === 0) {

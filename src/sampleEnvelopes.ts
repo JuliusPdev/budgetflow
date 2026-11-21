@@ -12,7 +12,7 @@ export function sampleEnvelopes(currentMonth: Month): Envelope[] {
       targetCents: 90_000,
       dueMonth: addMonths(currentMonth, 2),
       savedCents: 30_000,
-      // Booked early: the remaining €600 was borrowed from savings.
+      // Booked early: the remaining €600 was borrowed from the pot.
       paidMonth: currentMonth,
     },
     {

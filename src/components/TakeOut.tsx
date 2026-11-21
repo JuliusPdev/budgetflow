@@ -149,7 +149,7 @@ export function TakeOut({ previewFor, unit, periodLabel, log, onTakeOut, onUndo 
             ) : (
               <>
                 <p className="cost-row">
-                  <span>Still to put aside this {unit === 'paycheck' ? 'savings phase' : 'month'}</span>
+                  <span>Still to put aside this {unit === 'paycheck' ? 'paycheck' : 'month'}</span>
                   <span className="figures">
                     <span className="cost-before">{formatEuros(preview.openBeforeCents)}</span>
                     {' → '}

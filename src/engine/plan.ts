@@ -15,7 +15,7 @@ export interface MonthPlan {
   totalCents: Cents;
   /** This month's amount per envelope id. Envelopes that get nothing are left out. */
   byEnvelope: Record<string, Cents>;
-  /** Bills leaving savings this month, per envelope id. */
+  /** Bills leaving the pot this month, per envelope id. */
   billsOut: Record<string, Cents>;
 }
 
@@ -25,7 +25,7 @@ export function remainingCents(envelope: Envelope): Cents {
 }
 
 /**
- * For a paid envelope: the amount borrowed from savings to pay it, which the plan
+ * For a paid envelope: the amount borrowed from the pot to pay it, which the plan
  * repays by its due month. Zero for unpaid envelopes.
  */
 export function loanCents(envelope: Envelope): Cents {
@@ -57,7 +57,7 @@ export function planSetAside(envelopes: Envelope[], currentMonth: Month): MonthP
 }
 
 /**
- * Bills leaving savings in `month`: an unpaid envelope's bill at its deadline,
+ * Bills leaving the pot in `month`: an unpaid envelope's bill at its deadline,
  * a paid one's in the month it was actually paid.
  */
 function billsGoingOut(envelopes: Envelope[], month: Month, currentMonth: Month): Record<string, Cents> {
@@ -73,13 +73,13 @@ function billsGoingOut(envelopes: Envelope[], month: Month, currentMonth: Month)
  * Stage A. For each month, the running total that must have been set aside by its end.
  * Two rules, whichever demands more:
  *   1. every envelope has received its remaining amount by its deadline;
- *   2. in a month when an unpaid bill is due, the savings account is not negative
+ *   2. in a month when an unpaid bill is due, the pot is not negative
  *      after paying it — so money borrowed for an early payment is back in time.
  */
 function requiredByMonth(envelopes: Envelope[], months: Month[], currentMonth: Month): Cents[] {
-  // What is physically in the savings account now: everything put aside, minus
+  // What is really in the pot now: everything put aside, minus
   // bills already paid out of it. Negative means money was borrowed from elsewhere.
-  const savingsNow = envelopes.reduce(
+  const potNow = envelopes.reduce(
     (sum, envelope) =>
       sum + envelope.savedCents - (envelope.paidMonth === undefined ? 0 : envelope.targetCents),
     0,
@@ -100,9 +100,9 @@ function requiredByMonth(envelopes: Envelope[], months: Month[], currentMonth: M
         if (deadline === month) billDueThisMonth = true;
       }
     }
-    const savingsRule = billDueThisMonth ? unpaidBillsDue - savingsNow : 0;
+    const potRule = billDueThisMonth ? unpaidBillsDue - potNow : 0;
     // Money set aside never disappears, so the requirement can only grow.
-    runningMax = Math.max(runningMax, contributionsDue, savingsRule);
+    runningMax = Math.max(runningMax, contributionsDue, potRule);
     required.push(runningMax);
   }
   return required;

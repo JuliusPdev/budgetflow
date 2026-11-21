@@ -19,7 +19,7 @@ export type Cents = number;
 
 /**
  * One known future one-off expense — only facts you entered. How much of your
- * savings pot is meant for it is calculated fresh every time (engine/pot.ts),
+ * pot is meant for it is calculated fresh every time (engine/pot.ts),
  * so deleting or adding an expense re-shares the pot automatically.
  */
 export interface Expense {
@@ -54,7 +54,7 @@ export interface Envelope extends Expense {
   savedCents: Cents;
 }
 
-/** Money you moved into savings. */
+/** Money you put aside into the pot. */
 export interface SetAsideEntry {
   id: string;
   kind: 'set-aside';
@@ -65,7 +65,7 @@ export interface SetAsideEntry {
 }
 
 /**
- * A correction to what's in the pot, so it matches your real savings account —
+ * A correction to what's in the pot, so it matches the money really there —
  * also how the pot started when BudgetFlow switched to one pot. Can be negative.
  */
 export interface AdjustmentEntry {
@@ -78,7 +78,7 @@ export interface AdjustmentEntry {
 }
 
 /**
- * Your pay actually arrived. It opens a new savings period on its real date,
+ * Your pay actually arrived. It opens a new paycheck on its real date,
  * instead of the payday you usually expect. It never touches the pot: only what
  * you set aside from it does.
  */
@@ -129,7 +129,7 @@ export interface BudgetData {
  * Everything BudgetFlow saves. The version number lets the app recognize data
  * written in an older shape and convert it instead of crashing:
  *   1 — expenses only, each holding its own saved money
- *   2 — plus the savings log (set-asides split across expenses)
+ *   2 — plus the log of money put aside (set-asides split across expenses)
  *   3 — plus exact due dates and settings (payday)
  *   4 — one pot: expenses hold no money; the log says what's in the pot
  *   5 — plus paychecks: when your pay really arrived

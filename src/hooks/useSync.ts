@@ -34,7 +34,7 @@ export type SyncStatus =
 
 interface UseSyncOptions {
   account: AccountState;
-  /** Your budget on this device: saved expenses and the savings log. */
+  /** Your budget on this device: saved expenses and the pot's log. */
   data: BudgetData;
   /** True until this device's own list has loaded. */
   isLoading: boolean;

@@ -1,7 +1,7 @@
 import { DEFAULT_PAYDAY } from '../engine/timing';
 import type { AdjustmentEntry, BudgetData, BudgetSettings, Expense, LogEntry, SavedData, SetAsideEntry } from '../engine/types';
 
-// The one place that knows where your budget (envelopes and savings log) is kept. Everything else asks this
+// The one place that knows where your budget (envelopes and the pot's log) is kept. Everything else asks this
 // door to load or save, and waits for the answer (a Promise). Today the answer
 // comes from the browser's localStorage, instantly; later it can come from a
 // server without the rest of the app changing.
@@ -160,7 +160,7 @@ function toOnePot(oldExpenses: OldExpense[], oldLog: OldLogEntry[], settings: Bu
 /**
  * Reads saved data in any version this app knows:
  *   1 — expenses only, read as an empty log
- *   2 — plus the savings log
+ *   2 — plus the log of money put aside
  *   3 — plus exact due dates and settings
  *   4 — one pot
  *   5 — plus paychecks in the log

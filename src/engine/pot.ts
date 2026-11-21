@@ -2,7 +2,7 @@ import { addMonths } from './months';
 import { planSetAside, type MonthPlan } from './plan';
 import type { Cents, Envelope, Expense, Month } from './types';
 
-// One savings pot instead of money sealed inside each expense.
+// One pot instead of money sealed inside each expense.
 //
 // Stored: how much went into and out of the pot. Calculated fresh every time:
 // which expense that money is for. So deleting an expense frees its money,

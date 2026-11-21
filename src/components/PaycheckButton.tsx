@@ -15,7 +15,7 @@ interface PaycheckButtonProps {
 
 const DAY_PATTERN = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
 
-/** "I got my paycheck": starts the next savings period on the day your pay really arrived. */
+/** "I got my paycheck": starts the next paycheck on the day your pay really arrived. */
 export function PaycheckButton({ period, log, payday, today, onLog, onUndo }: PaycheckButtonProps) {
   const id = useId();
   const [isOpen, setIsOpen] = useState(false);
@@ -65,7 +65,7 @@ export function PaycheckButton({ period, log, payday, today, onLog, onUndo }: Pa
           <p className="undo-bar">
             <span>
               {formatMonthLong(lastLogged.month).split(' ')[0]} paycheck logged for {formatDayShort(lastLogged.date)}.
-              Your new savings period starts then.
+              Your new paycheck starts then.
             </span>
             <button
               type="button"

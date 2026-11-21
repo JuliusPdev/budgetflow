@@ -73,7 +73,7 @@ export default function App() {
   const phase = { last: period.start, next: period.nextExpected };
   // From the last payday to the next one: the stretch you can still contribute to.
   const paycheckLabel = hasPayday ? `${formatDayShort(phase.last)} – ${formatDayShort(phase.next)}` : undefined;
-  const periodName = hasPayday ? 'this savings phase' : formatMonthLong(currentPaycheck).split(' ')[0];
+  const periodName = hasPayday ? 'this paycheck' : formatMonthLong(currentPaycheck).split(' ')[0];
   const { account, linkError, sendLink, signOut } = useAccount();
   const sync = useSync({ account, data, isLoading, replaceAll });
 

@@ -3,7 +3,7 @@ import type { BudgetData } from '../engine/types';
 import { parseBackup, serializeBackup } from '../storage/envelopeStore';
 
 interface BackupProps {
-  /** Your saved budget: expenses and savings log (never the examples). */
+  /** Your saved budget: expenses and the pot's log (never the examples). */
   data: BudgetData;
   onRestore: (data: BudgetData) => void;
   /** True once sync is running, which changes what a backup is for. */

@@ -141,7 +141,7 @@ export function PotHistory({ log, onChangeAmount, onDelete }: PotHistoryProps) {
                   <div className="log-confirm" role="group" aria-label="Confirm delete">
                     <span className="field-hint">
                       {entry.kind === 'paycheck'
-                        ? 'Delete? Your savings period goes back to the paycheck before.'
+                        ? 'Delete? You go back to the paycheck before.'
                         : entry.id === STARTING_BALANCE_ID
                           ? `Delete? This takes your starting balance of ${formatEuros(entry.amountCents)} out of the pot.`
                           : 'Delete? The pot and your plan are recalculated without it.'}

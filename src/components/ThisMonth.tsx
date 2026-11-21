@@ -10,9 +10,9 @@ interface ThisMonthProps {
   envelopes: Envelope[];
   /** Made-up example data: drawn dashed and tagged so it isn't mistaken for yours. */
   isExample?: boolean;
-  /** With a payday set: the savings phase, from last to next payday, e.g. "21 Oct – 21 Nov". */
+  /** With a payday set: the current paycheck, from last to next payday, e.g. "21 Oct – 21 Nov". */
   paycheckLabel?: string;
-  /** Today, shown as the title so it's easy to compare with the savings phase. */
+  /** Today, shown as the title so it's easy to compare with the current paycheck. */
   today: Day;
   /**
    * What's still missing of this period's plan after what you've logged.
@@ -69,7 +69,7 @@ export function ThisMonth({
     >
       <div className="this-month-headline">
         <p className="eyebrow">
-          {paycheckLabel === undefined ? 'This month' : `Current savings phase · ${paycheckLabel}`}
+          {paycheckLabel === undefined ? 'This month' : `Current paycheck · ${paycheckLabel}`}
           {isExample && <span className="example-tag">Example</span>}
         </p>
         <h1 id="this-month-title" className="this-month-title">
@@ -90,7 +90,7 @@ export function ThisMonth({
               </>
             ) : (
               <>
-                <span className="headline-label">{paycheckLabel === undefined ? 'This month' : 'This savings phase'}</span>
+                <span className="headline-label">{paycheckLabel === undefined ? 'This month' : 'This paycheck'}</span>
                 <span className="headline-amount headline-done">Done</span>
               </>
             )}

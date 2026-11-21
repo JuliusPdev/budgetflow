@@ -20,7 +20,7 @@ interface PotPanelProps {
   children?: ReactNode;
 }
 
-/** What's in your savings pot, what it's meant for, and a way to correct it. */
+/** What's in your pot, what it's meant for, and a way to correct it. */
 export function PotPanel({ potCents, potShares, closestFirst, log, onCorrect, onUndo, onChangeAmount, onDelete, children }: PotPanelProps) {
   const id = useId();
   const [isCorrecting, setIsCorrecting] = useState(false);
@@ -52,7 +52,7 @@ export function PotPanel({ potCents, potShares, closestFirst, log, onCorrect, on
   return (
     <section className="pot" aria-labelledby={`${id}-title`}>
       <h2 id={`${id}-title`} className="section-label">
-        Savings pot
+        Your pot
       </h2>
       <p className="pot-line">
         <span>In your pot</span>
@@ -94,7 +94,7 @@ export function PotPanel({ potCents, potShares, closestFirst, log, onCorrect, on
       {isCorrecting ? (
         <form className="pot-form" onSubmit={handleSubmit} noValidate>
           <div className="field">
-            <label htmlFor={`${id}-amount`}>What's really in your savings for BudgetFlow? (€)</label>
+            <label htmlFor={`${id}-amount`}>How much is really in your pot? (€)</label>
             <div className="log-row">
               <input
                 id={`${id}-amount`}
@@ -123,7 +123,7 @@ export function PotPanel({ potCents, potShares, closestFirst, log, onCorrect, on
                 </p>
               ) : (
                 <p className="field-hint">
-                  Check your savings account. BudgetFlow records the difference as a correction and shares the
+                  Check where you keep the pot's money. BudgetFlow records the difference as a correction and shares the
                   pot out again.
                 </p>
               )}

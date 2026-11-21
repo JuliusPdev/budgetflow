@@ -12,7 +12,7 @@ interface MonthProgressProps {
   status: PeriodStatus;
   log: LogEntry[];
   today: Day;
-  /** How to name this period in sentences: a month ("November") or "this savings phase". */
+  /** How to name this period in sentences: a month ("November") or "this paycheck". */
   periodName: string;
   onLog: (details: Omit<SetAsideEntry, 'id' | 'kind'>) => string;
   onUndo: (entryId: string) => void;
@@ -86,7 +86,7 @@ export function MonthProgress({ monthPlan, status, log, today, periodName, onLog
 
       <form className="log-form" onSubmit={handleSubmit} noValidate>
         <div className="field">
-          <label htmlFor={`${fieldId}-amount`}>Amount you moved to savings (€)</label>
+          <label htmlFor={`${fieldId}-amount`}>Amount you put aside (€)</label>
           <div className="log-row">
             <input
               id={`${fieldId}-amount`}

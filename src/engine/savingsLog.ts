@@ -1,7 +1,7 @@
 import type { Cents, Day, Expense, LogEntry, Month } from './types';
 
 // What the log says about your pot: how much is in it, and what moved in and
-// out of it during the current savings period.
+// out of it during the current paycheck.
 
 /**
  * What is in the pot: everything set aside, plus corrections, minus money taken

@@ -3,7 +3,7 @@ import { planFromPot, sharePot, sharePotByPlan, withShares, type PotShares } fro
 import { periodMovements, planOrigin, potAtPeriodStart, potCents, type PeriodMovements } from './savingsLog';
 import type { Cents, Day, Expense, LogEntry, Month } from './types';
 
-// Where you stand in the current savings period.
+// Where you stand in the current paycheck.
 
 /**
  * How the pot is shared between expenses:

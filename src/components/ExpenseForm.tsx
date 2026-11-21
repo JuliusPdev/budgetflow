@@ -185,7 +185,7 @@ export function ExpenseForm({
           <span>Already paid</span>
         </label>
         <p className="field-hint">
-          Paid already? The bill has left your savings pot. Paid before its due month, the plan refills the pot by then.
+          Paid already? The bill has left your pot. Paid before its due month, the plan refills the pot by then.
         </p>
       </div>
 
