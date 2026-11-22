@@ -20,7 +20,7 @@ interface MonthProgressProps {
 
 /** How much of this month's plan you've actually set aside, and a way to log more. */
 export function MonthProgress({ monthPlan, status, log, today, periodName, onLog, onUndo }: MonthProgressProps) {
-  const { movements, openCents } = status;
+  const { movements, openCents, aheadCents } = status;
   // What this period really added to the pot: set aside, minus taken out, plus corrections.
   const loggedCents = Math.max(0, movements.netCents);
 
@@ -83,6 +83,11 @@ export function MonthProgress({ monthPlan, status, log, today, periodName, onLog
       </div>
       {explanation !== null && <p className="field-hint">{explanation}</p>}
       {isDone && <p className="progress-done sync-dot">Done for {periodName}</p>}
+      {aheadCents > 0 && (
+        <p className="field-hint">
+          {formatEuros(aheadCents)} more than {periodName} needs, so your next paychecks ask less.
+        </p>
+      )}
 
       <form className="log-form" onSubmit={handleSubmit} noValidate>
         <div className="field">

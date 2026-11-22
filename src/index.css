@@ -1538,9 +1538,6 @@ ol {
   margin-left: calc(var(--space-2) * -1);
 }
 
-.pot-form .log-row input {
-  flex: 1 1 8rem;
-}
 
 .log-history {
   margin: 0;

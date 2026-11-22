@@ -63,7 +63,6 @@ export default function App() {
     restoreEnvelope,
     log,
     logSetAside,
-    correctPot,
     takeOut,
     pay,
     finish,
@@ -419,8 +418,6 @@ export default function App() {
               potShares={potShares}
               closestFirst={status.rule === 'closest'}
               log={log}
-              onCorrect={(actualCents) => correctPot(actualCents, pot, dayOfDate(new Date()))}
-              onUndo={deleteLogEntry}
               onChangeAmount={changeLogAmount}
               onDelete={deleteLogEntry}
               nameOf={(id) => savedEnvelopes.find((envelope) => envelope.id === id)?.name}

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { DEFAULT_PAYDAY } from '../engine/timing';
-import type { AdjustmentEntry, BudgetData, Cents, Day, DoneStamp, Expense, ExpenseFields, PaycheckEntry, PaymentEntry, SetAsideEntry, WithdrawalEntry } from '../engine/types';
+import type { BudgetData, Cents, Day, DoneStamp, Expense, ExpenseFields, PaycheckEntry, PaymentEntry, SetAsideEntry, WithdrawalEntry } from '../engine/types';
 import type { EnvelopeStore } from '../storage/envelopeStore';
 
 /**
@@ -157,25 +157,6 @@ export function useEnvelopes(store: EnvelopeStore) {
   }
 
   /**
-   * Makes the pot match what's really in it: records the difference between
-   * what BudgetFlow thinks is there and what you say is there. Returns the
-   * entry's id for Undo, or null when nothing needed changing.
-   */
-  function correctPot(actualCents: Cents, currentPotCents: Cents, today: Day): string | null {
-    const differenceCents = actualCents - currentPotCents;
-    if (differenceCents === 0) return null;
-    const entry: AdjustmentEntry = {
-      id: crypto.randomUUID(),
-      kind: 'adjustment',
-      amountCents: differenceCents,
-      date: today,
-      note: 'Correction',
-    };
-    setData((current) => ({ ...current, log: [...current.log, entry] }));
-    return entry.id;
-  }
-
-  /**
    * Fixes the amount of a log entry, e.g. a set-aside typed wrong. The pot is
    * recalculated from the log, so nothing else needs adjusting.
    */
@@ -213,7 +194,6 @@ export function useEnvelopes(store: EnvelopeStore) {
     removeEnvelope,
     restoreEnvelope,
     logSetAside,
-    correctPot,
     takeOut,
     pay,
     finish,
