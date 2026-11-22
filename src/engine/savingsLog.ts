@@ -1,23 +1,19 @@
-import type { Cents, Day, Expense, LogEntry, Month } from './types';
+import type { Cents, Day, LogEntry, Month } from './types';
 
 // What the log says about your pot: how much is in it, and what moved in and
 // out of it during the current paycheck.
 
 /**
  * What is in the pot: everything set aside, plus corrections, minus money taken
- * out and bills already paid out of it. Below zero means more went out than came in.
+ * out and payments towards expenses. Below zero means more went out than came in.
  */
-export function potCents(expenses: Expense[], log: LogEntry[]): Cents {
-  const intoPot = log.reduce((sum, entry) => {
+export function potCents(log: LogEntry[]): Cents {
+  return log.reduce((sum, entry) => {
     // Paychecks don't go into the pot; only what you set aside from them does.
     if (entry.kind === 'paycheck') return sum;
-    if (entry.kind === 'withdrawal') return sum - entry.amountCents;
+    if (entry.kind === 'withdrawal' || entry.kind === 'payment') return sum - entry.amountCents;
     return sum + entry.amountCents;
   }, 0);
-  const paidOut = expenses
-    .filter((expense) => expense.paidMonth !== undefined)
-    .reduce((sum, expense) => sum + expense.targetCents, 0);
-  return intoPot - paidOut;
 }
 
 export interface PeriodMovements {
@@ -53,8 +49,8 @@ export function periodMovements(log: LogEntry[], month: Month, periodStart: Day)
  * Planning from it keeps the period's amount fixed: money you put in and take
  * out again during the period cancels out instead of looking like an old debt.
  */
-export function potAtPeriodStart(expenses: Expense[], log: LogEntry[], month: Month, periodStart: Day): Cents {
-  return potCents(expenses, log) - periodMovements(log, month, periodStart).netCents;
+export function potAtPeriodStart(log: LogEntry[], month: Month, periodStart: Day): Cents {
+  return potCents(log) - periodMovements(log, month, periodStart).netCents;
 }
 
 /**

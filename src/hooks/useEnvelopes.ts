@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { DEFAULT_PAYDAY } from '../engine/timing';
-import type { AdjustmentEntry, BudgetData, Cents, Day, Expense, ExpenseFields, PaycheckEntry, SetAsideEntry, WithdrawalEntry } from '../engine/types';
+import type { AdjustmentEntry, BudgetData, Cents, Day, Expense, ExpenseFields, PaycheckEntry, PaymentEntry, SetAsideEntry, WithdrawalEntry } from '../engine/types';
 import type { EnvelopeStore } from '../storage/envelopeStore';
 
 /**
@@ -84,6 +84,13 @@ export function useEnvelopes(store: EnvelopeStore) {
     return entry.id;
   }
 
+  /** Records money paid towards an expense out of the pot. Returns the entry's id, for Undo. */
+  function pay(details: Omit<PaymentEntry, 'id' | 'kind'>): string {
+    const entry: PaymentEntry = { ...details, id: crypto.randomUUID(), kind: 'payment' };
+    setData((current) => ({ ...current, log: [...current.log, entry] }));
+    return entry.id;
+  }
+
   /** Records that your pay arrived, which starts a new paycheck. Returns the entry's id, for Undo. */
   function logPaycheck(details: Omit<PaycheckEntry, 'id' | 'kind'>): string {
     const entry: PaycheckEntry = { ...details, id: crypto.randomUUID(), kind: 'paycheck' };
@@ -150,6 +157,7 @@ export function useEnvelopes(store: EnvelopeStore) {
     logSetAside,
     correctPot,
     takeOut,
+    pay,
     logPaycheck,
     changeLogAmount,
     deleteLogEntry,

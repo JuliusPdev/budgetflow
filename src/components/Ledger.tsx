@@ -1,4 +1,5 @@
 import type { MonthPlan } from '../engine/plan';
+import { ownerOf } from '../engine/payments';
 import { buildColumns } from '../engine/columns';
 import { buildTimeline } from '../engine/timeline';
 import type { Day, Envelope, Month } from '../engine/types';
@@ -19,7 +20,8 @@ interface LedgerProps {
 }
 
 function nameLookup(envelopes: Envelope[]): (id: string) => string {
-  const names = new Map(envelopes.map((envelope) => [envelope.id, envelope.name]));
+  // Parts of an expense with payments go by the expense's name too.
+  const names = new Map(envelopes.flatMap((envelope) => [[envelope.id, envelope.name], [ownerOf(envelope), envelope.name]] as const));
   return (id) => names.get(id) ?? id;
 }
 
@@ -177,7 +179,10 @@ export function LedgerColumns({ plan, envelopes, payday, currentStart, today }: 
   const layout = buildColumns(plan, envelopes, payday, today, currentStart);
   if (layout === null) return null;
   const nameOf = nameLookup(envelopes);
+  // One row per expense: its parts' amounts are added up under its own id.
   const goals = [...envelopes]
+    .filter((envelope, index) => envelopes.findIndex((other) => ownerOf(other) === ownerOf(envelope)) === index)
+    .map((envelope) => ({ ...envelope, id: ownerOf(envelope) }))
     .filter((envelope) => plan.some((month) => month.byEnvelope[envelope.id] !== undefined))
     .sort((a, b) => (a.dueDate ?? a.dueMonth).localeCompare(b.dueDate ?? b.dueMonth));
   // The first month is named at the left edge only if the next month's line leaves room;

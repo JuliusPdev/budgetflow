@@ -60,8 +60,8 @@ export function previewTakeOut(
   // Next period onwards: the usual plan, against the plan if only what was
   // already open gets set aside and the withdrawal stays missing.
   const nextMonth = addMonths(currentPaycheck, 1);
-  const usual = planFromPot(expenses, potCents(expenses, log) + before.openCents, nextMonth);
-  const notPutBack = planFromPot(expenses, potCents(expenses, logAfter) + before.openCents, nextMonth);
+  const usual = planFromPot(expenses, potCents(log) + before.openCents, nextMonth);
+  const notPutBack = planFromPot(expenses, potCents(logAfter) + before.openCents, nextMonth);
   const usualByMonth = new Map(usual.map((monthPlan) => [monthPlan.month, monthPlan.totalCents]));
   const notPutBackByMonth = new Map(notPutBack.map((monthPlan) => [monthPlan.month, monthPlan.totalCents]));
   const lastMonth = [...usual, ...notPutBack].reduce(
@@ -78,7 +78,7 @@ export function previewTakeOut(
   const normalMonth = lastChange === null ? null : addMonths(lastChange, 1);
   const normalCents = normalMonth === null ? undefined : notPutBackByMonth.get(normalMonth);
 
-  const potNow = potCents(expenses, log);
+  const potNow = potCents(log);
   const extraCents = sharePot(potNow, expenses, currentPaycheck).extraCents;
   return {
     openBeforeCents: before.openCents,

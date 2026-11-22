@@ -30,8 +30,6 @@ describe('validateDraft', () => {
     dueMode: 'month',
     dueMonth: '2027-03',
     dueDate: '',
-    isPaid: false,
-    paidMonth: '2026-11',
   };
 
   it('turns a good draft into clean fields', () => {
@@ -42,14 +40,8 @@ describe('validateDraft', () => {
         targetCents: 25_000,
         dueMonth: '2027-03',
         dueDate: undefined,
-        paidMonth: undefined,
       },
     });
-  });
-
-  it('keeps the paid month only when "already paid" is ticked', () => {
-    const result = validateDraft({ ...good, isPaid: true });
-    expect(result.ok && result.fields.paidMonth).toBe('2026-11');
   });
 
   it('explains every problem, per field', () => {
@@ -70,9 +62,8 @@ describe('validateDraft', () => {
       targetCents: 89_950,
       dueMonth: '2027-01',
       dueDate: '2027-01-28',
-      paidMonth: '2026-11',
     };
-    expect(validateDraft(draftFrom(existing, '2026-11'))).toEqual({ ok: true, fields: existing });
+    expect(validateDraft(draftFrom(existing))).toEqual({ ok: true, fields: existing });
   });
 
   it('takes the month from an exact date, and clears the date in month mode', () => {

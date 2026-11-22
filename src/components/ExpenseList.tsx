@@ -1,9 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import type { ExpensePreview } from '../engine/expensePreview';
 import type { FillUpView } from '../engine/fillUp';
+import type { ExpenseProgress } from '../engine/payments';
 import type { Cents, Expense, ExpenseFields, Month } from '../engine/types';
 import { fundingMonth, DEFAULT_PAYDAY, paycheckDates } from '../engine/timing';
-import { formatDayShort, formatDue, formatEuros, formatMonthShort } from '../utils/format';
+import { formatDayShort, formatDue, formatEuros } from '../utils/format';
 import { ExpenseForm } from './ExpenseForm';
 import { FillUpAxis, FillUpBar } from './FillUpBar';
 
@@ -11,7 +12,12 @@ interface ExpenseListProps {
   envelopes: Expense[];
   /** Each expense's current share of the pot, by id. */
   sharesById: Record<string, Cents>;
-  currentMonth: Month;
+  /** What's paid towards each expense so far, by id. */
+  progress: Record<string, ExpenseProgress>;
+  /** Opens the Pay window for an expense. */
+  onPay: (id: string) => void;
+  /** The payment just made, with a way to undo it; null when there's none to show. */
+  lastPayment: { text: string; onUndo: () => void } | null;
   /** Day of the month pay arrives. */
   payday: number;
   onUpdate: (id: string, fields: ExpenseFields) => void;
@@ -35,7 +41,9 @@ export const NEW_EXPENSE = 'new';
 export function ExpenseList({
   envelopes,
   sharesById,
-  currentMonth,
+  progress,
+  onPay,
+  lastPayment,
   payday,
   onUpdate,
   onRemove,
@@ -111,6 +119,14 @@ export function ExpenseList({
       </h2>
 
       <div className="undo-area" aria-live="polite">
+        {lastPayment !== null && (
+          <p className="undo-bar">
+            <span>{lastPayment.text}</span>
+            <button type="button" className="button-text" onClick={lastPayment.onUndo}>
+              Undo
+            </button>
+          </p>
+        )}
         {lastDeleted !== null && (
           <p className="undo-bar">
             <span>Deleted “{lastDeleted.envelope.name}”</span>
@@ -147,7 +163,6 @@ export function ExpenseList({
                 <li key={envelope.id} className="expense-row expense-row--editing">
                   <ExpenseForm
                     initial={envelope}
-                    currentMonth={currentMonth}
                     payday={payday}
                     submitLabel="Save changes"
                     previewFor={previewFor === undefined ? undefined : (fields) => previewFor(fields, envelope.id)}
@@ -164,6 +179,8 @@ export function ExpenseList({
                   key={envelope.id}
                   envelope={envelope}
                   shareCents={sharesById[envelope.id]}
+                  paidCents={progress[envelope.id]?.paidCents ?? 0}
+                  onPay={() => onPay(envelope.id)}
                   onEdit={() => openFormFor(envelope.id)}
                   onDelete={() => handleDelete(envelope)}
                   payday={payday}
@@ -187,33 +204,40 @@ interface ExpenseRowProps {
   envelope: Expense;
   /** Its share of the pot; missing once it's paid and settled. */
   shareCents: Cents | undefined;
+  /** Paid towards it so far. */
+  paidCents: Cents;
   payday: number;
+  onPay: () => void;
   onEdit: () => void;
   onDelete: () => void;
   fillUp: ExpenseListProps['fillUp'];
 }
 
-function ExpenseRow({ envelope, shareCents, payday, onEdit, onDelete, fillUp }: ExpenseRowProps) {
+function ExpenseRow({ envelope, shareCents, paidCents, payday, onPay, onEdit, onDelete, fillUp }: ExpenseRowProps) {
   const bar = fillUp?.view.rows[envelope.id];
+  const isPaidInFull = paidCents >= envelope.targetCents;
+  // What's paid already; the rest of the text is about what's still to pay.
+  const paid = isPaidInFull ? ['paid in full'] : paidCents > 0 ? [`${formatEuros(paidCents)}\u00a0paid`] : [];
   // With a bar, its dots already show the paydays, so the text stays short.
   const details =
     bar !== undefined
       ? [
           formatEuros(envelope.targetCents),
           `due ${formatDue(envelope)}`,
+          ...paid,
           `${formatEuros(bar.inPotCents)}\u00a0in\u00a0pot`,
         ]
       : [
           formatEuros(envelope.targetCents),
           `due ${formatDue(envelope)}`,
-          ...(payday === DEFAULT_PAYDAY
+          ...paid,
+          ...(payday === DEFAULT_PAYDAY || isPaidInFull
             ? []
             : [
                 `last set-aside ${formatDayShort(paycheckDates(fundingMonth(envelope, payday), payday).last)}`,
               ]),
-          ...(shareCents === undefined ? [] : [`${formatEuros(shareCents)} of it in the pot`]),
+          ...(shareCents === undefined || isPaidInFull ? [] : [`${formatEuros(shareCents)} of it in the pot`]),
         ];
-  if (envelope.paidMonth !== undefined) details.push(`paid ${formatMonthShort(envelope.paidMonth)}`);
 
   return (
     <li className={fillUp === undefined ? 'expense-row' : 'expense-row expense-row--with-bar'}>
@@ -227,6 +251,11 @@ function ExpenseRow({ envelope, shareCents, payday, onEdit, onDelete, fillUp }: 
         </div>
       )}
       <div className="expense-actions">
+        {!isPaidInFull && (
+          <button type="button" className="button-text" onClick={onPay} aria-label={`Pay towards ${envelope.name}`}>
+            Pay
+          </button>
+        )}
         <button type="button" className="button-text" onClick={onEdit} aria-label={`Edit ${envelope.name}`}>
           Edit
         </button>

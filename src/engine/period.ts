@@ -43,7 +43,7 @@ function sameAmounts(a: MonthPlan[], b: MonthPlan[]): boolean {
  * @param expenses already in paycheck terms (planningView), like the main plan.
  */
 export function periodStatus(expenses: Expense[], log: LogEntry[], month: Month, periodStart: Day): PeriodStatus {
-  const startPot = potAtPeriodStart(expenses, log, month, periodStart);
+  const startPot = potAtPeriodStart(log, month, periodStart);
   const origin = planOrigin(log, month);
   const closestPlan = planFromPot(expenses, startPot, month);
   const followingPlan = planSetAside(
@@ -58,7 +58,7 @@ export function periodStatus(expenses: Expense[], log: LogEntry[], month: Month,
   // needed doesn't have to be there, so taking it out doesn't need putting back.
   const extraAtStart = sharePot(startPot, expenses, month).extraCents;
   const targetCents = startPot + plannedCents - extraAtStart;
-  const openCents = Math.max(0, targetCents - potCents(expenses, log));
+  const openCents = Math.max(0, targetCents - potCents(log));
   return { plan, plannedCents, movements: periodMovements(log, month, periodStart), openCents, rule, origin };
 }
 

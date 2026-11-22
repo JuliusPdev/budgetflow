@@ -4,7 +4,6 @@ import type { ExpenseFields, Month } from '../engine/types';
 import { ExpenseForm } from './ExpenseForm';
 
 interface AddExpenseDialogProps {
-  currentMonth: Month;
   payday: number;
   previewFor: (fields: ExpenseFields) => ExpensePreview;
   paycheckLabel: (month: Month) => string;
@@ -17,7 +16,7 @@ interface AddExpenseDialogProps {
  * own <dialog> keeps the keyboard inside it and closes it with Esc. Clicking
  * beside it doesn't close it, so a half-filled form isn't lost by accident.
  */
-export function AddExpenseDialog({ currentMonth, payday, previewFor, paycheckLabel, onAdd, onClose }: AddExpenseDialogProps) {
+export function AddExpenseDialog({ payday, previewFor, paycheckLabel, onAdd, onClose }: AddExpenseDialogProps) {
   const titleId = useId();
   const dialogRef = useRef<HTMLDialogElement>(null);
 
@@ -50,7 +49,6 @@ export function AddExpenseDialog({ currentMonth, payday, previewFor, paycheckLab
       </div>
       <p className="field-hint">You'll see what it changes in your plan before anything is saved.</p>
       <ExpenseForm
-        currentMonth={currentMonth}
         payday={payday}
         submitLabel="Add expense"
         previewFor={previewFor}

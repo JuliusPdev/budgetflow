@@ -16,7 +16,6 @@ import { ExpenseImpact } from './ExpenseImpact';
 interface ExpenseFormProps {
   /** The expense being edited; leave out to add a new one. */
   initial?: ExpenseFields;
-  currentMonth: Month;
   /** Day of the month pay arrives, to show which paycheck covers the expense. */
   payday: number;
   submitLabel: string;
@@ -31,7 +30,6 @@ interface ExpenseFormProps {
 /** Add or edit one expense. Nothing is saved until the draft passes its checks. */
 export function ExpenseForm({
   initial,
-  currentMonth,
   payday,
   submitLabel,
   onSave,
@@ -39,7 +37,7 @@ export function ExpenseForm({
   previewFor,
   paycheckLabel,
 }: ExpenseFormProps) {
-  const [draft, setDraft] = useState<Draft>(() => draftFrom(initial, currentMonth));
+  const [draft, setDraft] = useState<Draft>(() => draftFrom(initial));
   const [errors, setErrors] = useState<DraftErrors>({});
   const formId = useId();
 
@@ -174,34 +172,6 @@ export function ExpenseForm({
           <p className="field-hint due-paycheck">Last set-aside on {coveringPaycheck()}</p>
         )}
       </fieldset>
-
-      <div className="field field--wide">
-        <label className="checkbox">
-          <input
-            type="checkbox"
-            checked={draft.isPaid}
-            onChange={(event) => setField('isPaid', event.target.checked)}
-          />
-          <span>Already paid</span>
-        </label>
-        <p className="field-hint">
-          Paid already? The bill has left your pot. Paid before its due month, the plan refills the pot by then.
-        </p>
-      </div>
-
-      {draft.isPaid && (
-        <div className="field">
-          <label htmlFor={fieldId('paidMonth')}>Paid in</label>
-          <input
-            {...inputProps('paidMonth')}
-            type="month"
-            placeholder="2026-11"
-            value={draft.paidMonth}
-            onChange={(event) => setField('paidMonth', event.target.value)}
-          />
-          {errorFor('paidMonth')}
-        </div>
-      )}
 
       {previewFor !== undefined && paycheckLabel !== undefined && (
         <div className="field--wide">

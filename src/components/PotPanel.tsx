@@ -16,12 +16,25 @@ interface PotPanelProps {
   onUndo: (entryId: string) => void;
   onChangeAmount: (entryId: string, amountCents: Cents) => void;
   onDelete: (entryId: string) => void;
+  /** An expense's name by its id, for payments in the history. */
+  nameOf: (envelopeId: string) => string | undefined;
   /** Taking money out, shown with the pot's other actions. */
   children?: ReactNode;
 }
 
 /** What's in your pot, what it's meant for, and a way to correct it. */
-export function PotPanel({ potCents, potShares, closestFirst, log, onCorrect, onUndo, onChangeAmount, onDelete, children }: PotPanelProps) {
+export function PotPanel({
+  potCents,
+  potShares,
+  closestFirst,
+  log,
+  onCorrect,
+  onUndo,
+  onChangeAmount,
+  onDelete,
+  nameOf,
+  children,
+}: PotPanelProps) {
   const id = useId();
   const [isCorrecting, setIsCorrecting] = useState(false);
   const [amountText, setAmountText] = useState('');
@@ -138,7 +151,7 @@ export function PotPanel({ potCents, potShares, closestFirst, log, onCorrect, on
 
       {children}
 
-      <PotHistory log={log} onChangeAmount={onChangeAmount} onDelete={onDelete} />
+      <PotHistory log={log} onChangeAmount={onChangeAmount} onDelete={onDelete} nameOf={nameOf} />
     </section>
   );
 }

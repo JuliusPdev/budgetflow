@@ -28,6 +28,7 @@ const EMPTY: BudgetData = { envelopes: [], log: [], settings: { payday: 1 } };
 const setAside: LogEntry = { id: 'made-up-entry', kind: 'set-aside', date: '2026-11-16', month: '2026-11', amountCents: 10_000 };
 const correction: LogEntry = { id: 'fix', kind: 'adjustment', amountCents: -2_500, date: '2026-11-17' };
 const withdrawal: LogEntry = { id: 'out', kind: 'withdrawal', date: '2026-11-19', month: '2026-11', amountCents: 10_000, reason: 'Concert' };
+const payment: LogEntry = { id: 'paid', kind: 'payment', date: '2026-11-20', envelopeId: 'trip', amountCents: 5_000, note: 'Deposit' };
 const paycheck: LogEntry = { id: 'pay', kind: 'paycheck', date: '2026-11-19', month: '2026-11', amountCents: 240_000 };
 
 /** Saved data in an older version, as text. */
@@ -42,8 +43,12 @@ describe('envelope store', () => {
 
   it('gives back exactly what was saved', async () => {
     const store = createLocalStore(fakeDrawer());
-    const paidTrip: Expense = { ...trip, id: 'paid', paidMonth: '2027-01', dueDate: '2027-03-14' };
-    const data: BudgetData = { envelopes: [trip, paidTrip], log: [setAside, correction, paycheck, withdrawal], settings: { payday: 21 } };
+    const datedTrip: Expense = { ...trip, id: 'dated', dueDate: '2027-03-14' };
+    const data: BudgetData = {
+      envelopes: [trip, datedTrip],
+      log: [setAside, correction, paycheck, withdrawal, payment],
+      settings: { payday: 21 },
+    };
     await store.save(data);
     expect(await store.load()).toEqual(data);
   });
@@ -51,7 +56,7 @@ describe('envelope store', () => {
   it('always saves the newest version', async () => {
     const drawer = fakeDrawer();
     await createLocalStore(drawer).save({ envelopes: [trip], log: [], settings: { payday: 1 } });
-    expect(JSON.parse(drawer.contents.get(STORAGE_KEY) ?? '{}').version).toBe(6);
+    expect(JSON.parse(drawer.contents.get(STORAGE_KEY) ?? '{}').version).toBe(7);
   });
 
   it('backs up unreadable data instead of crashing or losing it', async () => {
@@ -69,6 +74,8 @@ describe('envelope store', () => {
       { version: 4, envelopes: [trip], log: [], settings: { payday: 32 } },
       { version: 5, envelopes: [trip], log: [{ ...paycheck, date: '19 Nov' }], settings: { payday: 1 } },
       { version: 6, envelopes: [trip], log: [{ ...withdrawal, amountCents: 0 }], settings: { payday: 1 } },
+      { version: 7, envelopes: [trip], log: [{ ...payment, amountCents: 0 }], settings: { payday: 1 } },
+      { version: 7, envelopes: [trip], log: [{ ...payment, envelopeId: undefined }], settings: { payday: 1 } },
     ];
     for (const data of bad) {
       const drawer = fakeDrawer({ [STORAGE_KEY]: JSON.stringify(data) });
@@ -80,6 +87,17 @@ describe('envelope store', () => {
     const drawer = fakeDrawer({ 'budgetflow-v1': '{"budget":{}}' });
     expect(await createLocalStore(drawer).load()).toEqual(EMPTY);
     expect(drawer.contents.get('budgetflow-v1')).toBe('{"budget":{}}');
+  });
+});
+
+describe('payments instead of "Already paid" (from version 6 and older)', () => {
+  it('turns each tick into one payment of the full amount', () => {
+    const version6 = old({ version: 6, envelopes: [{ ...trip, paidMonth: '2026-10' }], log: [setAside], settings: { payday: 21 } });
+    expect(parseBackup(version6)).toEqual({
+      envelopes: [trip],
+      log: [setAside, { id: 'paid-trip', kind: 'payment', date: '2026-10-01', envelopeId: trip.id, amountCents: trip.targetCents }],
+      settings: { payday: 21 },
+    });
   });
 });
 
@@ -98,11 +116,13 @@ describe('switching to one pot (from version 3 and older)', () => {
 
   it('turns the money inside expenses into a starting balance, without counting logged money twice', () => {
     expect(parseBackup(version3)).toEqual({
-      envelopes: [trip, { id: 'tyres', name: 'Made-up tyres', targetCents: 40_000, dueMonth: '2026-10', paidMonth: '2026-10' }],
+      envelopes: [trip, { id: 'tyres', name: 'Made-up tyres', targetCents: 40_000, dueMonth: '2026-10' }],
       log: [
         // 300 + 400 inside the expenses, minus the 100 the logged set-aside put in.
         { id: STARTING_BALANCE_ID, kind: 'adjustment', amountCents: 60_000, note: 'Starting balance' },
         { id: 'made-up-entry', kind: 'set-aside', date: '2026-11-16', month: '2026-11', amountCents: 15_000 },
+        // The "Already paid" tick, now a payment.
+        { id: 'paid-tyres', kind: 'payment', date: '2026-10-01', envelopeId: 'tyres', amountCents: 40_000 },
       ],
       settings: { payday: 21 },
     });

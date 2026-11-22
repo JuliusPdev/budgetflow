@@ -8,6 +8,8 @@ interface PotHistoryProps {
   log: LogEntry[];
   onChangeAmount: (entryId: string, amountCents: Cents) => void;
   onDelete: (entryId: string) => void;
+  /** An expense's name by its id; missing once the expense is deleted. */
+  nameOf: (envelopeId: string) => string | undefined;
 }
 
 /** "−100" or "-100" → −10000 cents. Corrections can take money away, so a minus is allowed for them. */
@@ -22,8 +24,12 @@ function signed(cents: Cents): string {
   return `${cents < 0 ? '−' : '+'}${formatEuros(Math.abs(cents))}`;
 }
 
-function titleOf(entry: LogEntry): string {
+function titleOf(entry: LogEntry, nameOf: PotHistoryProps['nameOf']): string {
   if (entry.kind === 'set-aside') return 'Set aside';
+  if (entry.kind === 'payment') {
+    const name = nameOf(entry.envelopeId) ?? 'a deleted expense';
+    return entry.note === undefined || entry.note === '' ? `Paid · ${name}` : `Paid · ${name} · ${entry.note}`;
+  }
   if (entry.kind === 'withdrawal') return `Took out · ${entry.reason}`;
   if (entry.kind === 'paycheck') return `Paycheck arrived · ${formatMonthShort(entry.month)}`;
   return entry.note ?? 'Correction';
@@ -32,18 +38,18 @@ function titleOf(entry: LogEntry): string {
 /** Pot movements can be fixed in place; a paycheck is deleted and logged again instead. */
 type MoneyEntry = Exclude<LogEntry, { kind: 'paycheck' }>;
 
-/** What an entry did to the pot: a withdrawal is stored as a positive amount but takes money out. */
+/** What an entry did to the pot: withdrawals and payments are stored as positive amounts but take money out. */
 function potEffect(entry: MoneyEntry): Cents {
-  return entry.kind === 'withdrawal' ? -entry.amountCents : entry.amountCents;
+  return entry.kind === 'withdrawal' || entry.kind === 'payment' ? -entry.amountCents : entry.amountCents;
 }
 
-/** Set-asides and withdrawals are amounts above zero; only corrections can be negative. */
+/** Set-asides, withdrawals and payments are amounts above zero; only corrections can be negative. */
 function isPositiveOnly(entry: MoneyEntry): boolean {
   return entry.kind !== 'adjustment';
 }
 
 /** Every movement of money in the pot, newest first, each fixable or removable. */
-export function PotHistory({ log, onChangeAmount, onDelete }: PotHistoryProps) {
+export function PotHistory({ log, onChangeAmount, onDelete, nameOf }: PotHistoryProps) {
   const id = useId();
   const [isOpen, setIsOpen] = useState(false);
   const [editing, setEditing] = useState<{ entryId: string; text: string; error: string | null } | null>(null);
@@ -88,7 +94,7 @@ export function PotHistory({ log, onChangeAmount, onDelete }: PotHistoryProps) {
       {isOpen && (
         <ul id={`${id}-list`} className="log-history">
           {newestFirst.map((entry) => {
-            const title = titleOf(entry);
+            const title = titleOf(entry, nameOf);
             const when = entry.date === undefined ? 'When BudgetFlow switched to one pot' : formatDayShort(entry.date);
             const isEditing = editing?.entryId === entry.id;
 
@@ -142,7 +148,9 @@ export function PotHistory({ log, onChangeAmount, onDelete }: PotHistoryProps) {
                     <span className="field-hint">
                       {entry.kind === 'paycheck'
                         ? 'Delete? You go back to the paycheck before.'
-                        : entry.id === STARTING_BALANCE_ID
+                        : entry.kind === 'payment'
+                          ? `Delete? The ${formatEuros(entry.amountCents)} goes back into the pot, and the expense needs it again.`
+                          : entry.id === STARTING_BALANCE_ID
                           ? `Delete? This takes your starting balance of ${formatEuros(entry.amountCents)} out of the pot.`
                           : 'Delete? The pot and your plan are recalculated without it.'}
                     </span>
@@ -172,7 +180,7 @@ export function PotHistory({ log, onChangeAmount, onDelete }: PotHistoryProps) {
                           setConfirming(null);
                           setEditing({
                             entryId: entry.id,
-                            // A withdrawal is edited as the amount taken out, without a minus.
+                            // A withdrawal or payment is edited as the amount that went out, without a minus.
                             text: `${entry.amountCents < 0 ? '−' : ''}${centsToInputText(Math.abs(entry.amountCents))}`,
                             error: null,
                           });

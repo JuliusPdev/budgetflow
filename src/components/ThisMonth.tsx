@@ -1,13 +1,17 @@
 import type { ReactNode } from 'react';
-import { loanCents, type MonthPlan } from '../engine/plan';
+import { ownerOf, type ExpenseProgress } from '../engine/payments';
+import type { MonthPlan } from '../engine/plan';
 import { REFILL_ID } from '../engine/pot';
 import type { Cents, Day, Envelope } from '../engine/types';
-import { formatDayLong, formatDue, formatEuros, formatMonthShort } from '../utils/format';
+import { formatDayLong, formatDue, formatEuros } from '../utils/format';
 
 interface ThisMonthProps {
   /** The plan's first month; missing when there is nothing to save for. */
   monthPlan: MonthPlan | undefined;
+  /** Your expenses with their share of the pot; ones with payments come in parts. */
   envelopes: Envelope[];
+  /** Each expense's parts added back together, by its id. */
+  progress: Record<string, ExpenseProgress>;
   /** Made-up example data: drawn dashed and tagged so it isn't mistaken for yours. */
   isExample?: boolean;
   /** With a payday set: the current paycheck, from last to next payday, e.g. "21 Oct – 21 Nov". */
@@ -31,6 +35,7 @@ interface ThisMonthProps {
 export function ThisMonth({
   monthPlan,
   envelopes,
+  progress,
   isExample = false,
   paycheckLabel,
   today,
@@ -56,11 +61,18 @@ export function ThisMonth({
     );
   }
 
-  // Envelopes in the order the plan gives them: closest deadline first.
-  const goals = Object.entries(monthPlan.byEnvelope).flatMap(([id, shareCents]) => {
-    const envelope = envelopes.find((candidate) => candidate.id === id);
-    return envelope === undefined ? [] : [{ envelope, shareCents }];
-  });
+  // Expenses in the order the plan gives them: closest deadline first. The
+  // parts of an expense with payments are added back into one line.
+  const goals: { owner: string; envelope: Envelope; shareCents: Cents }[] = [];
+  for (const [id, shareCents] of Object.entries(monthPlan.byEnvelope)) {
+    // An expense's amounts are already added up under its own id; a fully paid one has only paid parts.
+    const envelope = envelopes.find((candidate) => ownerOf(candidate) === id);
+    if (envelope === undefined) continue;
+    const owner = ownerOf(envelope);
+    const existing = goals.find((goal) => goal.owner === owner);
+    if (existing !== undefined) existing.shareCents += shareCents;
+    else goals.push({ owner, envelope, shareCents });
+  }
 
   return (
     <section
@@ -108,9 +120,21 @@ export function ThisMonth({
           </p>
         )}
         <ul className="goals">
-          {goals.map(({ envelope, shareCents }) => (
-            <GoalLine key={envelope.id} envelope={envelope} shareCents={shareCents} />
-          ))}
+          {goals.map(({ owner, envelope, shareCents }) => {
+            // The part still to pay carries the expense's own id; without one, it's all paid.
+            const stillToPay = envelopes.find((candidate) => candidate.id === owner);
+            const paidCents = progress[owner]?.paidCents ?? 0;
+            return (
+              <GoalLine
+                key={owner}
+                envelope={envelope}
+                shareCents={shareCents}
+                targetCents={paidCents + (stillToPay?.targetCents ?? 0)}
+                paidCents={paidCents}
+                coveredCents={progress[owner]?.coveredCents ?? envelope.savedCents}
+              />
+            );
+          })}
         </ul>
         {addButton}
       </div>
@@ -119,24 +143,34 @@ export function ThisMonth({
 }
 
 interface GoalLineProps {
+  /** One part of the expense, for its name and dates. */
   envelope: Envelope;
+  /** This paycheck's amount for the whole expense. */
   shareCents: Cents;
+  /** The whole expense's amount. */
+  targetCents: Cents;
+  paidCents: Cents;
+  /** How much of it is taken care of: in the pot, or paid and put back. */
+  coveredCents: Cents;
 }
 
-function GoalLine({ envelope, shareCents }: GoalLineProps) {
-  const loan = loanCents(envelope);
-  const progress = Math.min(1, envelope.savedCents / envelope.targetCents);
+function GoalLine({ envelope, shareCents, targetCents, paidCents, coveredCents }: GoalLineProps) {
+  const isRefill = envelope.id === REFILL_ID;
+  const progress = Math.min(1, coveredCents / (isRefill ? envelope.targetCents : targetCents));
+  const isPaidInFull = paidCents >= targetCents;
+  const repayingCents = targetCents - coveredCents;
 
-  // A paid-early goal tells the repayment story instead of the saving story.
-  const detail =
-    envelope.id === REFILL_ID
-      ? 'More went out of your pot than came in. This puts it back first.'
-      : envelope.paidMonth !== undefined && loan > 0
-      ? `Paid ${formatMonthShort(envelope.paidMonth)} · repaying ${formatEuros(loan)} by ${formatDue(envelope)}`
-      : `${formatEuros(envelope.savedCents)} of ${formatEuros(envelope.targetCents)} · due ${formatDue(envelope)}`;
+  // Paid in full but early: it tells the putting-back story instead of the saving story.
+  const detail = isRefill
+    ? 'More went out of your pot than came in. This puts it back first.'
+    : isPaidInFull && repayingCents > 0
+      ? `Paid · putting back ${formatEuros(repayingCents)} by ${formatDue(envelope)}`
+      : paidCents > 0
+        ? `${formatEuros(coveredCents)} of ${formatEuros(targetCents)} · ${formatEuros(paidCents)} paid · due ${formatDue(envelope)}`
+        : `${formatEuros(coveredCents)} of ${formatEuros(targetCents)} · due ${formatDue(envelope)}`;
 
   return (
-    <li className={loan > 0 ? 'goal goal--repaying' : 'goal'}>
+    <li className={isPaidInFull && repayingCents > 0 ? 'goal goal--repaying' : 'goal'}>
       <div className="goal-top">
         <span className="goal-name">{envelope.name}</span>
         <span className="goal-share figures">{formatEuros(shareCents)}</span>

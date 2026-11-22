@@ -36,10 +36,13 @@ export interface Expense {
   /** The exact day, when known. A week is entered as its first day. */
   dueDate?: Day;
   /**
-   * The month the bill was actually paid; empty means not paid yet. A paid
-   * bill has left the pot. Paid before its due month, the plan refills the pot by then.
+   * Only on calculated parts, never stored: the month this part was paid. A
+   * paid part has left the pot. Paid before its due month, the plan refills the
+   * pot by then. Payments live in the log; engine/payments.ts turns them into parts.
    */
   paidMonth?: Month;
+  /** Only on calculated parts, never stored: the expense this part belongs to. */
+  partOf?: string;
 }
 
 /** An expense's own details, without its id — what a form edits. */
@@ -110,7 +113,24 @@ export interface WithdrawalEntry {
   reason: string;
 }
 
-export type LogEntry = SetAsideEntry | AdjustmentEntry | PaycheckEntry | WithdrawalEntry;
+/**
+ * Money paid out of the pot towards one of your expenses: all of it, or a part.
+ * The expense then needs that much less, and if it was paid before the money
+ * was there, your next set-asides put the difference back by its due date.
+ */
+export interface PaymentEntry {
+  id: string;
+  kind: 'payment';
+  date: Day;
+  /** The expense it paid for. */
+  envelopeId: string;
+  /** How much went out; always above zero. */
+  amountCents: Cents;
+  /** What it was for, like "Accommodation". */
+  note?: string;
+}
+
+export type LogEntry = SetAsideEntry | AdjustmentEntry | PaycheckEntry | WithdrawalEntry | PaymentEntry;
 
 /** Your choices that shape the calculation, shared by all your devices. */
 export interface BudgetSettings {
@@ -134,7 +154,8 @@ export interface BudgetData {
  *   4 — one pot: expenses hold no money; the log says what's in the pot
  *   5 — plus paychecks: when your pay really arrived
  *   6 — plus withdrawals: money taken out of the pot
+ *   7 — plus payments: money paid towards an expense, in part or in full
  */
 export interface SavedData extends BudgetData {
-  version: 6;
+  version: 7;
 }
