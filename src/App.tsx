@@ -11,6 +11,7 @@ import { buildColumns } from './engine/columns';
 import { previewExpense, type ExpensePreview } from './engine/expensePreview';
 import { buildFillUpView } from './engine/fillUp';
 import { doneMarks } from './engine/timeline';
+import { buildHistory } from './engine/history';
 import { withShares } from './engine/pot';
 import { previewDone, previewPayment, type PaymentPreview } from './engine/paymentPreview';
 import { addUpParts, coverPaidFirst, finishSplit, fromSpendingById, paidCentsById, progressById, ticksToPayments, withPayments, type ExtraFrom } from './engine/payments';
@@ -160,6 +161,11 @@ export default function App() {
   );
   // Finished expenses, for the ✓ in the timeline and Columns: your own only.
   const finished = useMemo(() => (showingExample ? [] : doneMarks(savedEnvelopes)), [showingExample, savedEnvelopes]);
+  // The paychecks before this one, as they really happened: your own only.
+  const past = useMemo(
+    () => (showingExample ? [] : buildHistory(log, savedEnvelopes, settings.payday, currentPaycheck, period.start)),
+    [showingExample, log, savedEnvelopes, settings.payday, currentPaycheck, period.start],
+  );
   // Each expense's parts added back together: paid so far, and taken care of.
   // "Paid" counts money from spending too, and that part needs no saving: it's taken care of.
   const progress = useMemo(() => {
@@ -387,9 +393,9 @@ export default function App() {
                 </p>
               )}
               {layout === 'columns' ? (
-                <LedgerColumns plan={shownPlan} envelopes={shownEnvelopes} payday={settings.payday} currentStart={period.startIsReal ? period.start : undefined} today={today} done={finished} />
+                <LedgerColumns plan={shownPlan} envelopes={shownEnvelopes} payday={settings.payday} currentStart={period.startIsReal ? period.start : undefined} today={today} done={finished} past={past} />
               ) : (
-                <LedgerTimeline plan={shownPlan} envelopes={shownEnvelopes} payday={settings.payday} currentStart={period.startIsReal ? period.start : undefined} today={today} done={finished} />
+                <LedgerTimeline plan={shownPlan} envelopes={shownEnvelopes} payday={settings.payday} currentStart={period.startIsReal ? period.start : undefined} today={today} done={finished} past={past} />
               )}
             </section>
           )}

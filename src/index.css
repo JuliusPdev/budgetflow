@@ -648,6 +648,16 @@ ol {
   border-top: 1px dashed var(--green);
 }
 
+/* Looking back: a quiet button above the timeline; the past reads a little softer than now. */
+.tl-earlier {
+  margin-bottom: var(--space-2);
+}
+
+.tl-past .tl-head,
+.tl-past.tl-out .tl-head {
+  font-weight: 400;
+}
+
 @media (max-width: 480px) {
   .timeline {
     --tl-gutter: 2.75rem;
@@ -841,6 +851,25 @@ ol {
   font-size: 0.75rem;
   font-weight: 500;
   color: var(--green);
+}
+
+/* Earlier paychecks in Columns: what happened, listed under each other. */
+.pl-past-events {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 2px;
+  padding-top: var(--space-1);
+  font-size: 0.75rem;
+}
+
+.pl-past-event {
+  white-space: nowrap;
+}
+
+.pl-past-event--done {
+  color: var(--green);
+  font-weight: 500;
 }
 
 /* An expense you finished, on that day: under the bills, in the saving green. */

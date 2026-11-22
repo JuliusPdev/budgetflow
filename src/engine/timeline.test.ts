@@ -31,6 +31,10 @@ function describeEvent(event: TimelineRow['event']): string {
       return `out ${event.envelopeId} ${event.date ?? 'any day'}`;
     case 'done':
       return `done ${event.mark.expenseId} ${event.mark.date}`;
+    case 'past-paycheck':
+      return `paycheck ${event.paycheck} from ${event.date}: ${event.putAsideCents}`;
+    case 'past':
+      return `${event.event.kind} ${event.event.date}`;
   }
 }
 

@@ -1,5 +1,6 @@
 import type { MonthPlan } from './plan';
 import { paycheckDates, paycheckMonthOf, paycheckRange } from './timing';
+import type { PastEvent } from './history';
 import type { Cents, Day, Expense, Month } from './types';
 
 // The plan as a diary: every set-aside and every bill on its real day, in date
@@ -28,6 +29,10 @@ export type TimelineEvent =
     }
   /** An expense you finished, on the day you finished it. */
   | { kind: 'done'; mark: DoneMark }
+  /** Looking back: where a past paycheck began, with what you really put aside in it. */
+  | { kind: 'past-paycheck'; date: Day; last: Day; paycheck: Month; putAsideCents: Cents }
+  /** Looking back: something that really happened. */
+  | { kind: 'past'; event: PastEvent }
   | { kind: 'today'; date: Day }
   /** The last day of the paycheck you're living on, so its band runs past today. */
   | { kind: 'paycheck-end'; date: Day; daysLeft: number }
@@ -74,7 +79,7 @@ function daysBetween(from: Day, to: Day): number {
   return Math.round((toTime(to) - toTime(from)) / 86_400_000);
 }
 
-const RANK = { 'month-start': 0, 'set-aside': 1, today: 2, bill: 3, done: 3, 'paycheck-end': 4 } as const;
+const RANK = { 'month-start': 0, 'set-aside': 1, 'past-paycheck': 1, today: 2, bill: 3, done: 3, past: 3, 'paycheck-end': 4 } as const;
 
 /**
  * Turns the plan (one entry per paycheck) into diary rows in date order, each
