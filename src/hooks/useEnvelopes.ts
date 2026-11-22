@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { DEFAULT_PAYDAY } from '../engine/timing';
-import type { AdjustmentEntry, BudgetData, Cents, Day, Expense, ExpenseFields, PaycheckEntry, PaymentEntry, SetAsideEntry, WithdrawalEntry } from '../engine/types';
+import type { AdjustmentEntry, BudgetData, Cents, Day, DoneStamp, Expense, ExpenseFields, PaycheckEntry, PaymentEntry, SetAsideEntry, WithdrawalEntry } from '../engine/types';
 import type { EnvelopeStore } from '../storage/envelopeStore';
 
 /**
@@ -84,11 +84,69 @@ export function useEnvelopes(store: EnvelopeStore) {
     return entry.id;
   }
 
-  /** Records money paid towards an expense out of the pot. Returns the entry's id, for Undo. */
-  function pay(details: Omit<PaymentEntry, 'id' | 'kind'>): string {
+  /**
+   * Records money paid towards an expense. Paying more than planned out of the
+   * pot raises the expense to `targetAfterCents`, in the same change.
+   * Returns the entry's id, for Undo.
+   */
+  function pay(details: Omit<PaymentEntry, 'id' | 'kind'>, targetAfterCents?: Cents): string {
     const entry: PaymentEntry = { ...details, id: crypto.randomUUID(), kind: 'payment' };
-    setData((current) => ({ ...current, log: [...current.log, entry] }));
+    setData((current) => ({
+      ...current,
+      envelopes:
+        targetAfterCents === undefined
+          ? current.envelopes
+          : current.envelopes.map((envelope) =>
+              envelope.id === details.envelopeId ? { ...envelope, targetCents: targetAfterCents } : envelope,
+            ),
+      log: [...current.log, entry],
+    }));
     return entry.id;
+  }
+
+  /**
+   * Finishes an expense: the last payment out of the pot (if any) and the done
+   * stamp, in one change, so the screens never see one without the other.
+   * Returns the payment's id, or null when the pot paid nothing more.
+   */
+  function finish(id: string, date: Day, costCents: Cents, last: { fromPotCents: Cents; fromSpendingCents: Cents }): string | null {
+    const { fromPotCents, fromSpendingCents } = last;
+    const payment: PaymentEntry | null =
+      fromPotCents + fromSpendingCents > 0
+        ? {
+            id: crypto.randomUUID(),
+            kind: 'payment',
+            date,
+            envelopeId: id,
+            amountCents: fromPotCents,
+            ...(fromSpendingCents > 0 ? { fromSpendingCents } : {}),
+            note: 'Done',
+          }
+        : null;
+    const done: DoneStamp = payment === null ? { date, costCents } : { date, costCents, paymentId: payment.id };
+    setData((current) => ({
+      ...current,
+      envelopes: current.envelopes.map((envelope) => (envelope.id === id ? { ...envelope, done } : envelope)),
+      log: payment === null ? current.log : [...current.log, payment],
+    }));
+    return payment?.id ?? null;
+  }
+
+  /** Undoes Done: the expense is open again, and the last payment Done made goes back into the pot. */
+  function reopen(id: string): void {
+    setData((current) => {
+      const paymentId = current.envelopes.find((envelope) => envelope.id === id)?.done?.paymentId;
+      return {
+        ...current,
+        envelopes: current.envelopes.map((envelope) => {
+          if (envelope.id !== id) return envelope;
+          const open = { ...envelope };
+          delete open.done;
+          return open;
+        }),
+        log: paymentId === undefined ? current.log : current.log.filter((entry) => entry.id !== paymentId),
+      };
+    });
   }
 
   /** Records that your pay arrived, which starts a new paycheck. Returns the entry's id, for Undo. */
@@ -158,6 +216,8 @@ export function useEnvelopes(store: EnvelopeStore) {
     correctPot,
     takeOut,
     pay,
+    finish,
+    reopen,
     logPaycheck,
     changeLogAmount,
     deleteLogEntry,

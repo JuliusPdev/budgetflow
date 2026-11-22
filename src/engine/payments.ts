@@ -15,13 +15,29 @@ export function paymentsIn(log: LogEntry[]): PaymentEntry[] {
     .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
 }
 
-/** How much has been paid towards each expense, by its id. */
+/** Everything a payment paid: out of the pot plus from spending money. */
+export function paymentTotal(payment: PaymentEntry): Cents {
+  return payment.amountCents + (payment.fromSpendingCents ?? 0);
+}
+
+/** How much has been paid towards each expense, by its id: from the pot and from spending money. */
 export function paidCentsById(log: LogEntry[]): Record<string, Cents> {
   const paid: Record<string, Cents> = {};
   for (const payment of paymentsIn(log)) {
-    paid[payment.envelopeId] = (paid[payment.envelopeId] ?? 0) + payment.amountCents;
+    paid[payment.envelopeId] = (paid[payment.envelopeId] ?? 0) + paymentTotal(payment);
   }
   return paid;
+}
+
+/** How much of each expense was paid from spending money, by its id. */
+export function fromSpendingById(log: LogEntry[]): Record<string, Cents> {
+  const spent: Record<string, Cents> = {};
+  for (const payment of paymentsIn(log)) {
+    if ((payment.fromSpendingCents ?? 0) > 0) {
+      spent[payment.envelopeId] = (spent[payment.envelopeId] ?? 0) + (payment.fromSpendingCents ?? 0);
+    }
+  }
+  return spent;
 }
 
 /** The expense a part belongs to: its own id for a whole expense. */
@@ -32,7 +48,7 @@ export function ownerOf(expense: Expense): string {
 /**
  * Your expenses as the plan needs them: one paid part per payment, plus the part
  * still to pay (with the expense's own id, so its bar and share stay where they
- * were). A fully paid expense has only paid parts.
+ * were). A fully paid or done expense has only paid parts.
  *
  * @param payday decides which paycheck a payment belongs to. Pass 1 (plain
  *   calendar months) for the screens, your payday for planning.
@@ -41,11 +57,14 @@ export function withPayments<T extends Expense>(expenses: T[], log: LogEntry[], 
   const payments = paymentsIn(log);
   return expenses.flatMap((expense) => {
     const own = payments.filter((payment) => payment.envelopeId === expense.id);
-    if (own.length === 0) return [expense];
-    const paidCents = own.reduce((sum, payment) => sum + payment.amountCents, 0);
+    // A done expense needs nothing more: only its payments may still be put back.
+    const isDone = expense.done !== undefined;
+    if (own.length === 0) return isDone ? [] : [expense];
+    // Money from spending counts as paid, but only pot money becomes a paid part to put back.
+    const paidCents = own.reduce((sum, payment) => sum + paymentTotal(payment), 0);
     const leftCents = expense.targetCents - paidCents;
-    const stillToPay: T[] = leftCents > 0 ? [{ ...expense, targetCents: leftCents }] : [];
-    const paidParts = own.map(
+    const stillToPay: T[] = leftCents > 0 && !isDone ? [{ ...expense, targetCents: leftCents }] : [];
+    const paidParts = own.filter((payment) => payment.amountCents > 0).map(
       (payment): T => ({
         ...expense,
         id: `${expense.id}~${payment.id}`,
@@ -63,6 +82,8 @@ export interface ExpenseProgress {
   paidCents: Cents;
   /** How much of the expense is taken care of: in the pot, or paid and put back. */
   coveredCents: Cents;
+  /** Of what's paid, the part that came from spending money. */
+  fromSpendingCents?: Cents;
 }
 
 /**
@@ -142,4 +163,63 @@ export function coverPaidFirst(parts: Envelope[]): Envelope[] {
     coveredByOwner.set(owner, left - share);
   }
   return parts.map((part) => (covered.has(part.id) ? { ...part, savedCents: covered.get(part.id) ?? 0 } : part));
+}
+
+/** Where the money above the planned amount came from, when something cost more. */
+export type ExtraFrom = 'pot' | 'spending';
+
+/**
+ * How much the pot pays when you finish an expense: what it really cost, minus
+ * what's paid already. When it cost more than planned and the extra came from
+ * your spending money, the pot pays only up to the planned amount.
+ * Never below zero: a total under what's paid is caught before this.
+ */
+export function lastPaymentCents(targetCents: Cents, paidCents: Cents, costCents: Cents, extraFrom: ExtraFrom): Cents {
+  const potPaysUpTo = costCents > targetCents && extraFrom === 'spending' ? targetCents : costCents;
+  return Math.max(0, potPaysUpTo - paidCents);
+}
+
+/** How a payment splits between the pot and your spending money. */
+export interface PaymentSplit {
+  /** Out of the pot. */
+  fromPotCents: Cents;
+  /** From your spending money: an extra you chose to pay yourself, plus anything the pot didn't hold. */
+  fromSpendingCents: Cents;
+  /** The part above what's planned for the expense. */
+  extraCents: Cents;
+  /** Of that, the part the pot couldn't pay because it didn't hold enough. */
+  shortCents: Cents;
+}
+
+/**
+ * Who pays a payment of `amountCents` when `leftCents` is still planned for the
+ * expense and the pot holds `potCents`. Above the plan, `extraFrom` decides;
+ * the pot never pays more than it holds, so it can't go below zero.
+ */
+export function splitPayment(amountCents: Cents, leftCents: Cents, potCents: Cents, extraFrom: ExtraFrom): PaymentSplit {
+  const extraCents = Math.max(0, amountCents - Math.max(0, leftCents));
+  const potShouldPay = extraFrom === 'spending' ? amountCents - extraCents : amountCents;
+  const fromPotCents = Math.min(potShouldPay, Math.max(0, potCents));
+  return {
+    fromPotCents,
+    fromSpendingCents: amountCents - fromPotCents,
+    extraCents,
+    shortCents: potShouldPay - fromPotCents,
+  };
+}
+
+/**
+ * Finishing an expense: the last payment, split between the pot (never more
+ * than it holds) and your spending money.
+ */
+export function finishSplit(
+  targetCents: Cents,
+  paidCents: Cents,
+  costCents: Cents,
+  extraFrom: ExtraFrom,
+  potCents: Cents,
+): { fromPotCents: Cents; fromSpendingCents: Cents } {
+  const lastCents = lastPaymentCents(targetCents, paidCents, costCents, extraFrom);
+  const fromPotCents = Math.min(lastCents, Math.max(0, potCents));
+  return { fromPotCents, fromSpendingCents: lastCents - fromPotCents };
 }

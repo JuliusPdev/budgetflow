@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { planSetAside } from './plan';
-import { buildTimeline, type TimelineRow } from './timeline';
+import { buildTimeline, doneMarks, type TimelineRow } from './timeline';
 import { planningView } from './timing';
 import type { Envelope } from './types';
 
@@ -29,6 +29,8 @@ function describeEvent(event: TimelineRow['event']): string {
       return `in ${event.date}`;
     case 'bill':
       return `out ${event.envelopeId} ${event.date ?? 'any day'}`;
+    case 'done':
+      return `done ${event.mark.expenseId} ${event.mark.date}`;
   }
 }
 
@@ -81,6 +83,17 @@ describe('the timeline', () => {
     expect(buildTimeline(latePlan, [late], PAYDAY, TODAY).map(describeRow)).toContain(
       'out gifts any day · band 2026-10',
     );
+  });
+
+  it('marks an expense done on its day, only within the paycheck shown', () => {
+    // The 21 Oct paycheck is shown first: 1 Nov is in it, 15 Oct is before it.
+    const marks = doneMarks([
+      { ...gifts, done: { date: '2026-11-01', costCents: 25_000 } },
+      { ...trip, done: { date: '2026-10-15', costCents: 80_000 } },
+    ]);
+    const rows = buildTimeline(plan, envelopes, PAYDAY, TODAY, undefined, marks).map(describeRow);
+    expect(rows).toContain('done gifts 2026-11-01 · band 2026-10');
+    expect(rows.some((row) => row.startsWith('done trip'))).toBe(false);
   });
 
   it('keeps the totals of the plan unchanged', () => {

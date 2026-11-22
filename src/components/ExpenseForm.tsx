@@ -1,8 +1,8 @@
 import { useId, useState, type FormEvent } from 'react';
 import { DEFAULT_PAYDAY, fundingMonth, paycheckDates } from '../engine/timing';
 import type { ExpensePreview } from '../engine/expensePreview';
-import type { ExpenseFields, Month } from '../engine/types';
-import { formatDayShort } from '../utils/format';
+import type { Cents, ExpenseFields, Month } from '../engine/types';
+import { formatDayShort, formatEuros } from '../utils/format';
 import {
   DRAFT_FIELD_ORDER,
   draftFrom,
@@ -18,6 +18,8 @@ interface ExpenseFormProps {
   initial?: ExpenseFields;
   /** Day of the month pay arrives, to show which paycheck covers the expense. */
   payday: number;
+  /** Already paid towards it: the amount can't go below that. */
+  paidCents?: Cents;
   submitLabel: string;
   onSave: (fields: ExpenseFields) => void;
   onCancel: () => void;
@@ -31,6 +33,7 @@ interface ExpenseFormProps {
 export function ExpenseForm({
   initial,
   payday,
+  paidCents = 0,
   submitLabel,
   onSave,
   onCancel,
@@ -64,6 +67,13 @@ export function ExpenseForm({
       const firstProblem = DRAFT_FIELD_ORDER.find((field) => result.errors[field] !== undefined);
       // Found by its id when you submit, so the cursor can jump to the first problem.
       if (firstProblem !== undefined) document.getElementById(fieldId(firstProblem))?.focus();
+      return;
+    }
+    if (result.fields.targetCents < paidCents) {
+      setErrors({
+        amount: `You've already paid ${formatEuros(paidCents)} towards it, so enter at least that. If it cost less in the end, use Done instead.`,
+      });
+      document.getElementById(fieldId('amount'))?.focus();
       return;
     }
     onSave(result.fields);

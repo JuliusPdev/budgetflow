@@ -1,6 +1,7 @@
 import { addMonths } from './months';
 import type { MonthPlan } from './plan';
 import { paycheckDates } from './timing';
+import type { DoneMark } from './timeline';
 import type { Cents, Day, Expense, Month } from './types';
 
 // The plan as a wall planner: one equally wide column ("brick") per paycheck,
@@ -47,6 +48,8 @@ export interface ColumnsLayout {
   firstMonth: Month;
   monthLines: MonthLine[];
   bills: BillMark[];
+  /** Expenses finished on a day the bricks show. */
+  done: { mark: DoneMark; spot: Spot }[];
   today: Spot;
 }
 
@@ -62,6 +65,7 @@ export function buildColumns(
   payday: number,
   today: Day,
   currentStart?: Day,
+  done: DoneMark[] = [],
 ): ColumnsLayout | null {
   if (plan.length === 0) return null;
 
@@ -141,7 +145,9 @@ export function buildColumns(
   // While the next paycheck is late, today stays at the end of the current brick.
   const todaySpot = today >= bricks[0].next ? { brick: 0, at: 1 } : spotOf(today);
 
-  return { bricks, firstMonth, monthLines, bills, today: todaySpot };
+  const doneSpots = done.filter((mark) => mark.date >= rangeStart && mark.date < rangeEnd).map((mark) => ({ mark, spot: spotOf(mark.date) }));
+
+  return { bricks, firstMonth, monthLines, bills, done: doneSpots, today: todaySpot };
 }
 
 /** The last day of a month: "2026-12" → "2026-12-31". */

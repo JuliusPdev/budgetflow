@@ -40,6 +40,16 @@ function isDay(value: unknown): value is string {
   return typeof value === 'string' && DAY_PATTERN.test(value);
 }
 
+function isDoneStamp(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    isDay(candidate.date) &&
+    isWholeCents(candidate.costCents) &&
+    (candidate.paymentId === undefined || typeof candidate.paymentId === 'string')
+  );
+}
+
 /** Checks that a value read from storage really has the shape of an expense. */
 export function isExpense(value: unknown): value is Expense {
   if (typeof value !== 'object' || value === null) return false;
@@ -50,6 +60,7 @@ export function isExpense(value: unknown): value is Expense {
     isWholeCents(candidate.targetCents) &&
     isMonth(candidate.dueMonth) &&
     (candidate.paidMonth === undefined || isMonth(candidate.paidMonth)) &&
+    (candidate.done === undefined || isDoneStamp(candidate.done)) &&
     // An exact date must be a real-looking day inside the due month.
     (candidate.dueDate === undefined ||
       (isDay(candidate.dueDate) && (candidate.dueDate as string).slice(0, 7) === candidate.dueMonth))
@@ -74,11 +85,14 @@ export function isLogEntry(value: unknown): value is LogEntry {
     );
   }
   if (candidate.kind === 'payment') {
+    const fromSpending = candidate.fromSpendingCents ?? 0;
     return (
       isDay(candidate.date) &&
       typeof candidate.envelopeId === 'string' &&
       isWholeCents(candidate.amountCents) &&
-      (candidate.amountCents as number) > 0 &&
+      isWholeCents(fromSpending) &&
+      // Out of the pot, from spending money, or both: but something was paid.
+      (candidate.amountCents as number) + fromSpending > 0 &&
       (candidate.note === undefined || typeof candidate.note === 'string')
     );
   }
@@ -177,6 +191,7 @@ function toOnePot(oldExpenses: OldExpense[], oldLog: OldLogEntry[], settings: Bu
  *   5 — plus paychecks in the log
  *   6 — plus withdrawals in the log
  *   7 — plus payments in the log; expenses no longer carry "Already paid"
+ *   8 — plus done expenses
  * Versions 1–3 are converted to one pot; versions 1–2 get payday on the 1st,
  * which keeps their calculations as they were. Before version 7, "Already paid"
  * ticks become payments.
@@ -195,13 +210,13 @@ function parseAnyVersion(raw: string): BudgetData | null {
     const data = parsed as Record<string, unknown>;
     if (!Array.isArray(data.envelopes)) return null;
 
-    // Versions 5 to 7 only added kinds of log entry, so all four read the same way.
+    // Versions 5 to 8 only added kinds of log entry and done stamps, so all read the same way.
     // The ticks of versions 4–6 are kept here and turned into payments above.
-    if (data.version === 4 || data.version === 5 || data.version === 6 || data.version === 7) {
+    if (data.version === 4 || data.version === 5 || data.version === 6 || data.version === 7 || data.version === 8) {
       if (!data.envelopes.every(isExpense)) return null;
       if (!Array.isArray(data.log) || !data.log.every(isLogEntry) || !isSettings(data.settings)) return null;
       const envelopes = data.envelopes.map((expense) =>
-        data.version === 7 ? onlyExpenseFields(expense) : { ...onlyExpenseFields(expense), paidMonth: expense.paidMonth },
+        data.version === 7 || data.version === 8 ? onlyExpenseFields(expense) : { ...onlyExpenseFields(expense), paidMonth: expense.paidMonth },
       );
       return { envelopes, log: data.log, settings: data.settings };
     }
@@ -222,13 +237,13 @@ function parseAnyVersion(raw: string): BudgetData | null {
  * in. Paid parts are only ever calculated, never stored.
  */
 function onlyExpenseFields(expense: Expense): Expense {
-  const { id, name, targetCents, dueMonth, dueDate } = expense;
-  return { id, name, targetCents, dueMonth, dueDate };
+  const { id, name, targetCents, dueMonth, dueDate, done } = expense;
+  return done === undefined ? { id, name, targetCents, dueMonth, dueDate } : { id, name, targetCents, dueMonth, dueDate, done };
 }
 
 /** Always writes the newest version. */
 function toSavedData(data: BudgetData): SavedData {
-  return { version: 7, envelopes: data.envelopes, log: data.log, settings: data.settings };
+  return { version: 8, envelopes: data.envelopes, log: data.log, settings: data.settings };
 }
 
 /**

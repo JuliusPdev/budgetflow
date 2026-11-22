@@ -43,6 +43,21 @@ export interface Expense {
   paidMonth?: Month;
   /** Only on calculated parts, never stored: the expense this part belongs to. */
   partOf?: string;
+  /** Set once it's over: the plan stops putting money aside for it. */
+  done?: DoneStamp;
+}
+
+/**
+ * "It's over, and this is what it really cost." Pressing Done may also make a
+ * last payment out of the pot; its id is kept so Reopen can take it back.
+ */
+export interface DoneStamp {
+  /** The day you finished it. */
+  date: Day;
+  /** What it really cost in total. Anything the pot didn't pay came from your spending money. */
+  costCents: Cents;
+  /** The payment Done made, if it made one. */
+  paymentId?: string;
 }
 
 /** An expense's own details, without its id — what a form edits. */
@@ -124,8 +139,14 @@ export interface PaymentEntry {
   date: Day;
   /** The expense it paid for. */
   envelopeId: string;
-  /** How much went out; always above zero. */
+  /** How much came out of the pot. Zero only when all of it came from spending money. */
   amountCents: Cents;
+  /**
+   * The part the pot couldn't (or didn't have to) pay: it came from your
+   * spending money. It counts as paid towards the expense, but nothing needs
+   * to be put back for it.
+   */
+  fromSpendingCents?: Cents;
   /** What it was for, like "Accommodation". */
   note?: string;
 }
@@ -155,7 +176,8 @@ export interface BudgetData {
  *   5 — plus paychecks: when your pay really arrived
  *   6 — plus withdrawals: money taken out of the pot
  *   7 — plus payments: money paid towards an expense, in part or in full
+ *   8 — plus done expenses: finished, with what they really cost
  */
 export interface SavedData extends BudgetData {
-  version: 7;
+  version: 8;
 }

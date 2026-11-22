@@ -10,6 +10,8 @@ interface PotHistoryProps {
   onDelete: (entryId: string) => void;
   /** An expense's name by its id; missing once the expense is deleted. */
   nameOf: (envelopeId: string) => string | undefined;
+  /** Why a new amount for this entry isn't allowed, or null when it is. */
+  problemWith?: (entry: LogEntry, amountCents: Cents) => string | null;
 }
 
 /** "−100" or "-100" → −10000 cents. Corrections can take money away, so a minus is allowed for them. */
@@ -28,7 +30,8 @@ function titleOf(entry: LogEntry, nameOf: PotHistoryProps['nameOf']): string {
   if (entry.kind === 'set-aside') return 'Set aside';
   if (entry.kind === 'payment') {
     const name = nameOf(entry.envelopeId) ?? 'a deleted expense';
-    return entry.note === undefined || entry.note === '' ? `Paid · ${name}` : `Paid · ${name} · ${entry.note}`;
+    const spent = (entry.fromSpendingCents ?? 0) > 0 ? [`${formatEuros(entry.fromSpendingCents ?? 0)} from spending money`] : [];
+    return ['Paid', name, ...(entry.note === undefined || entry.note === '' ? [] : [entry.note]), ...spent].join(' · ');
   }
   if (entry.kind === 'withdrawal') return `Took out · ${entry.reason}`;
   if (entry.kind === 'paycheck') return `Paycheck arrived · ${formatMonthShort(entry.month)}`;
@@ -49,7 +52,7 @@ function isPositiveOnly(entry: MoneyEntry): boolean {
 }
 
 /** Every movement of money in the pot, newest first, each fixable or removable. */
-export function PotHistory({ log, onChangeAmount, onDelete, nameOf }: PotHistoryProps) {
+export function PotHistory({ log, onChangeAmount, onDelete, nameOf, problemWith }: PotHistoryProps) {
   const id = useId();
   const [isOpen, setIsOpen] = useState(false);
   const [editing, setEditing] = useState<{ entryId: string; text: string; error: string | null } | null>(null);
@@ -71,6 +74,11 @@ export function PotHistory({ log, onChangeAmount, onDelete, nameOf }: PotHistory
         ...editing,
         error: isPositiveOnly(entry) ? 'Enter an amount like 200 or 199.50' : 'Enter an amount like 100 or −100',
       });
+      return;
+    }
+    const problem = problemWith?.(entry, cents) ?? null;
+    if (problem !== null) {
+      setEditing({ ...editing, error: problem });
       return;
     }
     onChangeAmount(entry.id, cents);

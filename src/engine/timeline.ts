@@ -26,11 +26,33 @@ export type TimelineEvent =
       /** Already paid early: shown so the repayments make sense. */
       isPaid: boolean;
     }
+  /** An expense you finished, on the day you finished it. */
+  | { kind: 'done'; mark: DoneMark }
   | { kind: 'today'; date: Day }
   /** The last day of the paycheck you're living on, so its band runs past today. */
   | { kind: 'paycheck-end'; date: Day; daysLeft: number }
   /** Where a calendar month begins. */
   | { kind: 'month-start'; month: Month };
+
+/** A finished expense, for the ✓ in the timeline and the Columns view. */
+export interface DoneMark {
+  expenseId: string;
+  name: string;
+  date: Day;
+  costCents: Cents;
+  plannedCents: Cents;
+}
+
+/** Every done expense as a mark, in date order. */
+export function doneMarks(expenses: Expense[]): DoneMark[] {
+  return expenses
+    .flatMap((expense) =>
+      expense.done === undefined
+        ? []
+        : [{ expenseId: expense.id, name: expense.name, date: expense.done.date, costCents: expense.done.costCents, plannedCents: expense.targetCents }],
+    )
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
 
 export interface TimelineRow {
   event: TimelineEvent;
@@ -52,7 +74,7 @@ function daysBetween(from: Day, to: Day): number {
   return Math.round((toTime(to) - toTime(from)) / 86_400_000);
 }
 
-const RANK = { 'month-start': 0, 'set-aside': 1, today: 2, bill: 3, 'paycheck-end': 4 } as const;
+const RANK = { 'month-start': 0, 'set-aside': 1, today: 2, bill: 3, done: 3, 'paycheck-end': 4 } as const;
 
 /**
  * Turns the plan (one entry per paycheck) into diary rows in date order, each
@@ -66,6 +88,7 @@ export function buildTimeline(
   payday: number,
   today: Day,
   currentStart?: Day,
+  done: DoneMark[] = [],
 ): TimelineRow[] {
   if (plan.length === 0) return [];
   const byId = new Map(envelopes.map((envelope) => [envelope.id, envelope]));
@@ -111,6 +134,13 @@ export function buildTimeline(
       place(month, counted.slice(8, 10), { kind: 'bill', date: day, envelopeId, amountCents, isPaid }, bandOf(counted));
     }
   });
+
+  // Finished in the paycheck shown at the top: older ones need looking back.
+  const shownFrom = currentStart ?? paycheckDates(firstPaycheck, payday).last;
+  for (const mark of done) {
+    if (mark.date < shownFrom || mark.date > today) continue;
+    place(mark.date.slice(0, 7), mark.date.slice(8, 10), { kind: 'done', mark }, firstPaycheck);
+  }
 
   // Today always falls in the paycheck you're living on, even if the next one is late.
   place(thisMonth, today.slice(8, 10), { kind: 'today', date: today }, firstPaycheck);

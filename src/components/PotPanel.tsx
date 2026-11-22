@@ -18,6 +18,8 @@ interface PotPanelProps {
   onDelete: (entryId: string) => void;
   /** An expense's name by its id, for payments in the history. */
   nameOf: (envelopeId: string) => string | undefined;
+  /** Why a new amount for a history entry isn't allowed, or null when it is. */
+  problemWith?: (entry: LogEntry, amountCents: Cents) => string | null;
   /** Taking money out, shown with the pot's other actions. */
   children?: ReactNode;
 }
@@ -33,6 +35,7 @@ export function PotPanel({
   onChangeAmount,
   onDelete,
   nameOf,
+  problemWith,
   children,
 }: PotPanelProps) {
   const id = useId();
@@ -151,7 +154,7 @@ export function PotPanel({
 
       {children}
 
-      <PotHistory log={log} onChangeAmount={onChangeAmount} onDelete={onDelete} nameOf={nameOf} />
+      <PotHistory log={log} onChangeAmount={onChangeAmount} onDelete={onDelete} nameOf={nameOf} problemWith={problemWith} />
     </section>
   );
 }

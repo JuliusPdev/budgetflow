@@ -44,9 +44,10 @@ describe('envelope store', () => {
   it('gives back exactly what was saved', async () => {
     const store = createLocalStore(fakeDrawer());
     const datedTrip: Expense = { ...trip, id: 'dated', dueDate: '2027-03-14' };
+    const doneTrip: Expense = { ...trip, id: 'done', done: { date: '2026-11-21', costCents: 45_000, paymentId: 'paid' } };
     const data: BudgetData = {
-      envelopes: [trip, datedTrip],
-      log: [setAside, correction, paycheck, withdrawal, payment],
+      envelopes: [trip, datedTrip, doneTrip],
+      log: [setAside, correction, paycheck, withdrawal, payment, { ...payment, id: 'spent', amountCents: 0, fromSpendingCents: 4_000 }],
       settings: { payday: 21 },
     };
     await store.save(data);
@@ -56,7 +57,7 @@ describe('envelope store', () => {
   it('always saves the newest version', async () => {
     const drawer = fakeDrawer();
     await createLocalStore(drawer).save({ envelopes: [trip], log: [], settings: { payday: 1 } });
-    expect(JSON.parse(drawer.contents.get(STORAGE_KEY) ?? '{}').version).toBe(7);
+    expect(JSON.parse(drawer.contents.get(STORAGE_KEY) ?? '{}').version).toBe(8);
   });
 
   it('backs up unreadable data instead of crashing or losing it', async () => {
@@ -76,6 +77,9 @@ describe('envelope store', () => {
       { version: 6, envelopes: [trip], log: [{ ...withdrawal, amountCents: 0 }], settings: { payday: 1 } },
       { version: 7, envelopes: [trip], log: [{ ...payment, amountCents: 0 }], settings: { payday: 1 } },
       { version: 7, envelopes: [trip], log: [{ ...payment, envelopeId: undefined }], settings: { payday: 1 } },
+      { version: 8, envelopes: [{ ...trip, done: { date: '21 Nov', costCents: 100 } }], log: [], settings: { payday: 1 } },
+      { version: 8, envelopes: [trip], log: [{ ...payment, fromSpendingCents: -1 }], settings: { payday: 1 } },
+      { version: 8, envelopes: [{ ...trip, done: { date: '2026-11-21', costCents: -1 } }], log: [], settings: { payday: 1 } },
     ];
     for (const data of bad) {
       const drawer = fakeDrawer({ [STORAGE_KEY]: JSON.stringify(data) });

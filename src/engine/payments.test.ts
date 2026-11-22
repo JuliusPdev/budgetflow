@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { previewPayment } from './paymentPreview';
-import { addUpParts, coverPaidFirst, paidCentsById, progressById, ticksToPayments, withPayments } from './payments';
+import { previewDone, previewPayment } from './paymentPreview';
+import { addUpParts, coverPaidFirst, lastPaymentCents, paidCentsById, progressById, splitPayment, ticksToPayments, withPayments } from './payments';
 import { withShares } from './pot';
 import type { Expense, LogEntry, PaymentEntry } from './types';
 
@@ -114,5 +114,83 @@ describe('what paying towards an expense changes', () => {
     const preview = previewPayment([trip, laptop], log, 1, NOVEMBER, START, payment('p', '2026-11-22', 'trip', 30_000));
     expect(preview.openAfterCents).toBe(preview.openBeforeCents);
     expect(preview.laterChanges).toEqual([]);
+  });
+});
+
+describe('finishing an expense', () => {
+  const done = { date: '2026-11-22', costCents: 70_000 };
+
+  it('needs nothing more once done, even if less was paid than planned', () => {
+    const parts = withPayments([{ ...trip, done }], [payment('a', '2026-11-22', 'trip', 70_000)], 1);
+    expect(parts.map((part) => [part.id, part.targetCents])).toEqual([['trip~a', 70_000]]);
+  });
+
+  it('drops out of the plan when it cost nothing (cancelled)', () => {
+    expect(withPayments([{ ...trip, done: { date: '2026-11-22', costCents: 0 } }, gifts], [], 1)).toEqual([gifts]);
+  });
+
+  it('lets the pot pay what it really cost, minus what is paid already', () => {
+    // €800 planned, €300 paid.
+    expect(lastPaymentCents(80_000, 30_000, 80_000, 'pot')).toBe(50_000);
+    expect(lastPaymentCents(80_000, 30_000, 70_000, 'pot')).toBe(40_000);
+    expect(lastPaymentCents(80_000, 30_000, 95_000, 'pot')).toBe(65_000);
+  });
+
+  it('pays only up to the plan when the extra came from spending money', () => {
+    expect(lastPaymentCents(80_000, 30_000, 95_000, 'spending')).toBe(50_000);
+    expect(lastPaymentCents(80_000, 80_000, 95_000, 'spending')).toBe(0);
+  });
+
+  it('frees later paychecks when it cost less than planned', () => {
+    const log: LogEntry[] = [{ id: 'start', kind: 'adjustment', amountCents: 30_000 }];
+    const preview = previewDone([gifts, trip], log, 1, NOVEMBER, START, 'trip', { date: '2026-11-22', costCents: 0 }, null);
+    expect(preview.potAfterCents).toBe(preview.potBeforeCents);
+    expect(preview.laterChanges.length).toBeGreaterThan(0);
+    expect(preview.laterChanges.every((change) => change.afterCents < change.beforeCents)).toBe(true);
+    expect(preview.leftAfterCents).toBe(0);
+  });
+
+  it('takes the last payment out of the pot', () => {
+    const log: LogEntry[] = [{ id: 'start', kind: 'adjustment', amountCents: 90_000 }];
+    const last = payment('last', '2026-11-22', 'trip', 70_000);
+    const preview = previewDone([gifts, trip], log, 1, NOVEMBER, START, 'trip', { ...done, paymentId: 'last' }, last);
+    expect(preview.potAfterCents).toBe(20_000);
+    expect(preview.ownMoneyCents + preview.borrowedCents).toBe(70_000);
+  });
+});
+
+describe('paying more than planned, or more than the pot holds', () => {
+  it('lets the pot pay it all when it holds enough and the extra comes from the pot', () => {
+    // €800 planned, €900 guide, €1,000 in the pot.
+    expect(splitPayment(90_000, 80_000, 100_000, 'pot')).toEqual({ fromPotCents: 90_000, fromSpendingCents: 0, extraCents: 10_000, shortCents: 0 });
+  });
+
+  it('leaves the extra to your spending money when you say so', () => {
+    expect(splitPayment(90_000, 80_000, 100_000, 'spending')).toEqual({ fromPotCents: 80_000, fromSpendingCents: 10_000, extraCents: 10_000, shortCents: 0 });
+  });
+
+  it('never takes more than the pot holds', () => {
+    // Only €500 in the pot: the other €400 came from somewhere else.
+    expect(splitPayment(90_000, 80_000, 50_000, 'pot')).toEqual({ fromPotCents: 50_000, fromSpendingCents: 40_000, extraCents: 10_000, shortCents: 40_000 });
+    expect(splitPayment(30_000, 80_000, -5_000, 'pot').fromPotCents).toBe(0);
+  });
+
+  it('counts money from spending as paid, but puts back only what the pot paid', () => {
+    const log: LogEntry[] = [{ ...payment('a', '2026-11-22', 'trip', 50_000), fromSpendingCents: 40_000 }];
+    expect(paidCentsById(log)).toEqual({ trip: 90_000 });
+    // €800 planned, €900 paid: nothing left to pay; only the pot's €500 is a paid part.
+    expect(withPayments([trip], log, 1).map((part) => [part.id, part.targetCents])).toEqual([['trip~a', 50_000]]);
+  });
+
+  it('has no paid part for a payment made entirely from spending money', () => {
+    const log: LogEntry[] = [{ ...payment('a', '2026-11-22', 'trip', 0), fromSpendingCents: 20_000 }];
+    expect(withPayments([trip], log, 1).map((part) => [part.id, part.targetCents])).toEqual([['trip', 60_000]]);
+  });
+
+  it('shows a raised plan in the preview', () => {
+    const log: LogEntry[] = [{ id: 'start', kind: 'adjustment', amountCents: 100_000 }];
+    const preview = previewPayment([trip], log, 1, NOVEMBER, START, payment('p', '2026-11-22', 'trip', 90_000), 90_000);
+    expect(preview.potAfterCents).toBe(10_000);
+    expect(preview.leftAfterCents).toBe(0);
   });
 });

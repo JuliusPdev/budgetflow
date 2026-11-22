@@ -10,16 +10,18 @@ import { dayOfDate, monthOfDate } from './engine/months';
 import { buildColumns } from './engine/columns';
 import { previewExpense, type ExpensePreview } from './engine/expensePreview';
 import { buildFillUpView } from './engine/fillUp';
+import { doneMarks } from './engine/timeline';
 import { withShares } from './engine/pot';
-import { previewPayment, type PaymentPreview } from './engine/paymentPreview';
-import { addUpParts, coverPaidFirst, progressById, ticksToPayments, withPayments } from './engine/payments';
+import { previewDone, previewPayment, type PaymentPreview } from './engine/paymentPreview';
+import { addUpParts, coverPaidFirst, finishSplit, fromSpendingById, paidCentsById, progressById, ticksToPayments, withPayments, type ExtraFrom } from './engine/payments';
 import { potCents } from './engine/savingsLog';
 import { periodStatus, shareByRule } from './engine/period';
 import { currentPeriod } from './engine/paychecks';
 import { DEFAULT_PAYDAY, paycheckDates, periodMonth, planningView } from './engine/timing';
 import { PaycheckButton } from './components/PaycheckButton';
-import { PayDialog } from './components/PayDialog';
-import type { ExpenseFields, LogEntry } from './engine/types';
+import { DoneDialog } from './components/DoneDialog';
+import { PayDialog, type PayDetails } from './components/PayDialog';
+import type { Expense, ExpenseFields, LogEntry } from './engine/types';
 import { PotPanel } from './components/PotPanel';
 import { TakeOut } from './components/TakeOut';
 import { previewTakeOut } from './engine/takeOut';
@@ -61,6 +63,8 @@ export default function App() {
     correctPot,
     takeOut,
     pay,
+    finish,
+    reopen,
     logPaycheck,
     changeLogAmount,
     deleteLogEntry,
@@ -154,8 +158,26 @@ export default function App() {
       ),
     [shownEnvelopes, potShares],
   );
+  // Finished expenses, for the ✓ in the timeline and Columns: your own only.
+  const finished = useMemo(() => (showingExample ? [] : doneMarks(savedEnvelopes)), [showingExample, savedEnvelopes]);
   // Each expense's parts added back together: paid so far, and taken care of.
-  const progress = useMemo(() => progressById(shownEnvelopes), [shownEnvelopes]);
+  // "Paid" counts money from spending too, and that part needs no saving: it's taken care of.
+  const progress = useMemo(() => {
+    const fromParts = progressById(shownEnvelopes);
+    const paid = paidCentsById(activeLog);
+    const spent = fromSpendingById(activeLog);
+    const ids = new Set([...Object.keys(fromParts), ...Object.keys(paid)]);
+    return Object.fromEntries(
+      [...ids].map((expenseId) => [
+        expenseId,
+        {
+          paidCents: paid[expenseId] ?? 0,
+          coveredCents: (fromParts[expenseId]?.coveredCents ?? 0) + (spent[expenseId] ?? 0),
+          fromSpendingCents: spent[expenseId] ?? 0,
+        },
+      ]),
+    );
+  }, [shownEnvelopes, activeLog]);
   // How each expense fills up, on the same time axis as the Columns view.
   // Not for example data: the list shows only your own expenses.
   const fillUpView = useMemo(() => {
@@ -198,13 +220,82 @@ export default function App() {
 
   // Which expense the Pay window is open for, if any.
   const [payingFor, setPayingFor] = useState<string | null>(null);
-  // The payment just made, so it can be undone right away.
-  const [lastPayment, setLastPayment] = useState<{ id: string; name: string; amountCents: number } | null>(null);
+  // Which expense the Done window is open for, if any.
+  const [finishingFor, setFinishingFor] = useState<string | null>(null);
+  // The payment or Done just made, so it can be undone right away.
+  const [lastAction, setLastAction] = useState<
+    | { kind: 'payment'; id: string; expenseId: string; name: string; amountCents: number; targetBeforeCents?: number }
+    | { kind: 'done'; expenseId: string; name: string }
+    | null
+  >(null);
   const payingExpense = savedEnvelopes.find((envelope) => envelope.id === payingFor);
-  /** What paying `amountCents` on `date` towards an expense would change, before saving. */
-  function previewPayFor(envelopeId: string, amountCents: number, date: string): PaymentPreview {
-    const payment = { id: 'preview', kind: 'payment', date, envelopeId, amountCents } as const;
-    return previewPayment(ownPlanning, log, settings.payday, currentPaycheck, period.start, payment);
+  const finishingExpense = savedEnvelopes.find((envelope) => envelope.id === finishingFor);
+  /** What a payment towards an expense would change, before saving. */
+  function previewPayFor(envelopeId: string, { split, date, targetAfterCents }: PayDetails): PaymentPreview {
+    const payment = {
+      id: 'preview',
+      kind: 'payment',
+      date,
+      envelopeId,
+      amountCents: split.fromPotCents,
+      fromSpendingCents: split.fromSpendingCents,
+    } as const;
+    return previewPayment(ownPlanning, log, settings.payday, currentPaycheck, period.start, payment, targetAfterCents);
+  }
+  /** What finishing an expense with this total would change, before saving. */
+  function previewDoneFor(expense: Expense, costCents: number, date: string, extraFrom: ExtraFrom): PaymentPreview {
+    const paidCents = progress[expense.id]?.paidCents ?? 0;
+    const { fromPotCents, fromSpendingCents } = finishSplit(expense.targetCents, paidCents, costCents, extraFrom, pot);
+    const payment =
+      fromPotCents + fromSpendingCents > 0
+        ? ({ id: 'preview', kind: 'payment', date, envelopeId: expense.id, amountCents: fromPotCents, fromSpendingCents } as const)
+        : null;
+    const done = { date, costCents, paymentId: payment?.id };
+    return previewDone(ownPlanning, log, settings.payday, currentPaycheck, period.start, expense.id, done, payment);
+  }
+  /** The Undo bar under "Your expenses", while what it undoes is still there. */
+  function undoBar(): { text: string; onUndo: () => void } | null {
+    if (lastAction === null) return null;
+    if (lastAction.kind === 'payment') {
+      if (!log.some((entry) => entry.id === lastAction.id)) return null;
+      return {
+        text: `Paid ${formatEuros(lastAction.amountCents)} towards ${lastAction.name}.`,
+        onUndo: () => {
+          deleteLogEntry(lastAction.id);
+          // A payment that raised the plan lowers it back again.
+          if (lastAction.targetBeforeCents !== undefined) updateEnvelope(lastAction.expenseId, { targetCents: lastAction.targetBeforeCents });
+          setLastAction(null);
+        },
+      };
+    }
+    if (savedEnvelopes.find((envelope) => envelope.id === lastAction.expenseId)?.done === undefined) return null;
+    return {
+      text: `Marked ${lastAction.name} as done.`,
+      onUndo: () => {
+        reopen(lastAction.expenseId);
+        setLastAction(null);
+      },
+    };
+  }
+  /**
+   * A payment changed in the pot's history may not pay more than the expense
+   * needs: what's planned while it's open, what it really cost once done.
+   */
+  function problemWithAmount(entry: LogEntry, amountCents: number): string | null {
+    if (entry.kind !== 'payment') return null;
+    const expense = savedEnvelopes.find((envelope) => envelope.id === entry.envelopeId);
+    if (expense === undefined) return null;
+    const paidByOthers = (progress[expense.id]?.paidCents ?? 0) - entry.amountCents;
+    if (expense.done !== undefined) {
+      const mostCents = Math.max(0, expense.done.costCents - paidByOthers);
+      return amountCents > mostCents
+        ? `That's more than it cost (${formatEuros(expense.done.costCents)} in total). Reopen ${expense.name} first to change what it cost.`
+        : null;
+    }
+    const mostCents = Math.max(0, expense.targetCents - paidByOthers);
+    return amountCents > mostCents
+      ? `That's more than the ${formatEuros(mostCents)} it can take. If ${expense.name} cost more, use Done.`
+      : null;
   }
   /** A paycheck by its payday, "21 Dec"; plain months without a payday. */
   function nameOfPaycheck(month: string): string {
@@ -296,9 +387,9 @@ export default function App() {
                 </p>
               )}
               {layout === 'columns' ? (
-                <LedgerColumns plan={shownPlan} envelopes={shownEnvelopes} payday={settings.payday} currentStart={period.startIsReal ? period.start : undefined} today={today} />
+                <LedgerColumns plan={shownPlan} envelopes={shownEnvelopes} payday={settings.payday} currentStart={period.startIsReal ? period.start : undefined} today={today} done={finished} />
               ) : (
-                <LedgerTimeline plan={shownPlan} envelopes={shownEnvelopes} payday={settings.payday} currentStart={period.startIsReal ? period.start : undefined} today={today} />
+                <LedgerTimeline plan={shownPlan} envelopes={shownEnvelopes} payday={settings.payday} currentStart={period.startIsReal ? period.start : undefined} today={today} done={finished} />
               )}
             </section>
           )}
@@ -314,6 +405,7 @@ export default function App() {
               onChangeAmount={changeLogAmount}
               onDelete={deleteLogEntry}
               nameOf={(id) => savedEnvelopes.find((envelope) => envelope.id === id)?.name}
+              problemWith={problemWithAmount}
             >
               <TakeOut
                 previewFor={(amountCents) => previewTakeOut(planningExpenses, log, currentPaycheck, period.start, amountCents, today)}
@@ -332,19 +424,17 @@ export default function App() {
             progress={progress}
             onPay={(id) => {
               setPayingFor(id);
-              setLastPayment(null);
+              setLastAction(null);
             }}
-            lastPayment={
-              lastPayment === null || !log.some((entry) => entry.id === lastPayment.id)
-                ? null
-                : {
-                    text: `Paid ${formatEuros(lastPayment.amountCents)} towards ${lastPayment.name}.`,
-                    onUndo: () => {
-                      deleteLogEntry(lastPayment.id);
-                      setLastPayment(null);
-                    },
-                  }
-            }
+            onDone={(id) => {
+              setFinishingFor(id);
+              setLastAction(null);
+            }}
+            onReopen={(id) => {
+              reopen(id);
+              setLastAction(null);
+            }}
+            lastAction={undoBar()}
             payday={settings.payday}
             onUpdate={updateEnvelope}
             onRemove={removeEnvelope}
@@ -380,15 +470,49 @@ export default function App() {
             <PayDialog
               expense={payingExpense}
               paidCents={progress[payingExpense.id]?.paidCents ?? 0}
+              potCents={pot}
               today={today}
-              previewFor={(amountCents, date) => previewPayFor(payingExpense.id, amountCents, date)}
+              previewFor={(details) => previewPayFor(payingExpense.id, details)}
               paycheckLabel={nameOfPaycheck}
               unit={hasPayday ? 'paycheck' : 'month'}
-              onPay={(amountCents, date, note) => {
-                const entryId = pay({ envelopeId: payingExpense.id, amountCents, date, note });
-                setLastPayment({ id: entryId, name: payingExpense.name, amountCents });
+              onPay={({ split, date, targetAfterCents }, note) => {
+                const entryId = pay(
+                  {
+                    envelopeId: payingExpense.id,
+                    amountCents: split.fromPotCents,
+                    ...(split.fromSpendingCents > 0 ? { fromSpendingCents: split.fromSpendingCents } : {}),
+                    date,
+                    note,
+                  },
+                  targetAfterCents,
+                );
+                setLastAction({
+                  kind: 'payment',
+                  id: entryId,
+                  expenseId: payingExpense.id,
+                  name: payingExpense.name,
+                  amountCents: split.fromPotCents + split.fromSpendingCents,
+                  ...(targetAfterCents === undefined ? {} : { targetBeforeCents: payingExpense.targetCents }),
+                });
               }}
               onClose={() => setPayingFor(null)}
+            />
+          )}
+          {finishingExpense !== undefined && (
+            <DoneDialog
+              expense={finishingExpense}
+              paidCents={progress[finishingExpense.id]?.paidCents ?? 0}
+              potCents={pot}
+              today={today}
+              previewFor={(costCents, date, extraFrom) => previewDoneFor(finishingExpense, costCents, date, extraFrom)}
+              paycheckLabel={nameOfPaycheck}
+              unit={hasPayday ? 'paycheck' : 'month'}
+              onDone={(costCents, date, extraFrom) => {
+                const paidCents = progress[finishingExpense.id]?.paidCents ?? 0;
+                finish(finishingExpense.id, date, costCents, finishSplit(finishingExpense.targetCents, paidCents, costCents, extraFrom, pot));
+                setLastAction({ kind: 'done', expenseId: finishingExpense.id, name: finishingExpense.name });
+              }}
+              onClose={() => setFinishingFor(null)}
             />
           )}
         </main>

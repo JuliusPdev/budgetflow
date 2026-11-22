@@ -1,7 +1,7 @@
 import type { MonthPlan } from '../engine/plan';
 import { ownerOf } from '../engine/payments';
 import { buildColumns } from '../engine/columns';
-import { buildTimeline } from '../engine/timeline';
+import { buildTimeline, type DoneMark } from '../engine/timeline';
 import type { Day, Envelope, Month } from '../engine/types';
 import { formatDayShort, formatEuros, formatMonthLong, formatMonthShort, formatPeriod } from '../utils/format';
 
@@ -17,6 +17,8 @@ interface LedgerProps {
   currentStart?: Day;
   /** Today: where the "Today" line goes. */
   today: Day;
+  /** Expenses you finished, marked with a ✓ on the day. */
+  done?: DoneMark[];
 }
 
 function nameLookup(envelopes: Envelope[]): (id: string) => string {
@@ -41,9 +43,9 @@ function GutterLabel({ month, isFirst }: { month: Month; isFirst: boolean }) {
  * names in the left margin where each month begins, and a band per paycheck
  * beside them. The band of the paycheck you're living on is green.
  */
-export function LedgerTimeline({ plan, envelopes, payday, currentStart, today }: LedgerProps) {
+export function LedgerTimeline({ plan, envelopes, payday, currentStart, today, done }: LedgerProps) {
   const nameOf = nameLookup(envelopes);
-  const rows = buildTimeline(plan, envelopes, payday, today, currentStart);
+  const rows = buildTimeline(plan, envelopes, payday, today, currentStart, done);
   const currentBand = plan[0]?.month;
 
   /** A band's look in this row: whether it starts or ends here, and if it's the current one. */
@@ -139,6 +141,30 @@ export function LedgerTimeline({ plan, envelopes, payday, currentStart, today }:
           );
         }
 
+        if (event.kind === 'done') {
+          const { mark } = event;
+          return (
+            <li key={`done-${mark.expenseId}`} className="tl-row tl-done">
+              <span />
+              {band}
+              <span className="tl-content">
+                <span className="tl-date">{formatDayShort(mark.date)}</span>
+                <span className="tl-body">
+                  <span className="tl-head">
+                    <span>
+                      <span className="done-tag">✓ Done</span> {mark.name}
+                    </span>
+                    <span className="figures">{formatEuros(mark.costCents)}</span>
+                  </span>
+                  <span className="tl-sub">
+                    {mark.costCents === mark.plannedCents ? 'Cost as planned' : `Planned ${formatEuros(mark.plannedCents)}`}
+                  </span>
+                </span>
+              </span>
+            </li>
+          );
+        }
+
         return (
           <li key={`out-${event.envelopeId}`} className="tl-row tl-out">
             <span />
@@ -175,8 +201,8 @@ function percent(at: number): string {
  * Money is put aside at its left edge (payday); dashed lines show where a month
  * begins; bills sit on their real day in the "Going out" row.
  */
-export function LedgerColumns({ plan, envelopes, payday, currentStart, today }: LedgerProps) {
-  const layout = buildColumns(plan, envelopes, payday, today, currentStart);
+export function LedgerColumns({ plan, envelopes, payday, currentStart, today, done }: LedgerProps) {
+  const layout = buildColumns(plan, envelopes, payday, today, currentStart, done);
   if (layout === null) return null;
   const nameOf = nameLookup(envelopes);
   // One row per expense: its parts' amounts are added up under its own id.
@@ -194,7 +220,8 @@ export function LedgerColumns({ plan, envelopes, payday, currentStart, today }: 
     // Long plans are wider than the screen; only the planner scrolls, never the page.
     <div className="ledger-scroll" role="region" aria-label="Plan by paycheck" tabIndex={0}>
       <div
-        className="planner"
+        // A ✓ for something finished needs a line of its own under the bills.
+        className={layout.done.length > 0 ? 'planner planner--with-done' : 'planner'}
         style={{
           gridTemplateColumns: `var(--planner-labels) repeat(${layout.bricks.length}, minmax(9rem, 1fr))`,
           // Month names, dates, one row per expense, put aside, going out, today.
@@ -280,13 +307,20 @@ export function LedgerColumns({ plan, envelopes, payday, currentStart, today }: 
                         <span className="pl-bill-label" style={{ left: percent(from) }}>
                           <span className="figures">−{formatEuros(bill.amountCents)}</span>
                           <span className="pl-bill-names">
-                            {bill.envelopeIds.map(nameOf).join(', ')} · {when}
+                            {[...new Set(bill.envelopeIds.map(nameOf))].join(', ')} · {when}
                           </span>
                         </span>
                       )}
                     </span>
                   );
                 })}
+                {layout.done
+                  .filter(({ spot }) => spot.brick === index)
+                  .map(({ mark, spot }) => (
+                    <span key={`done-${mark.expenseId}`} className="pl-done" style={{ left: percent(spot.at) }}>
+                      ✓ {mark.name} · {formatEuros(mark.costCents)}
+                    </span>
+                  ))}
               </span>
               <span className="pl-cell pl-foot" aria-hidden="true">
                 {layout.today.brick === index && (

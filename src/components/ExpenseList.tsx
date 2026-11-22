@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from
 import type { ExpensePreview } from '../engine/expensePreview';
 import type { FillUpView } from '../engine/fillUp';
 import type { ExpenseProgress } from '../engine/payments';
-import type { Cents, Expense, ExpenseFields, Month } from '../engine/types';
+import type { Cents, DoneStamp, Expense, ExpenseFields, Month } from '../engine/types';
 import { fundingMonth, DEFAULT_PAYDAY, paycheckDates } from '../engine/timing';
 import { formatDayShort, formatDue, formatEuros } from '../utils/format';
 import { ExpenseForm } from './ExpenseForm';
@@ -16,8 +16,12 @@ interface ExpenseListProps {
   progress: Record<string, ExpenseProgress>;
   /** Opens the Pay window for an expense. */
   onPay: (id: string) => void;
-  /** The payment just made, with a way to undo it; null when there's none to show. */
-  lastPayment: { text: string; onUndo: () => void } | null;
+  /** Opens the Done window for an expense. */
+  onDone: (id: string) => void;
+  /** Makes a done expense open again. */
+  onReopen: (id: string) => void;
+  /** The payment or Done just made, with a way to undo it; null when there's none to show. */
+  lastAction: { text: string; onUndo: () => void } | null;
   /** Day of the month pay arrives. */
   payday: number;
   onUpdate: (id: string, fields: ExpenseFields) => void;
@@ -43,7 +47,9 @@ export function ExpenseList({
   sharesById,
   progress,
   onPay,
-  lastPayment,
+  onDone,
+  onReopen,
+  lastAction,
   payday,
   onUpdate,
   onRemove,
@@ -56,8 +62,13 @@ export function ExpenseList({
 }: ExpenseListProps) {
   const [lastDeleted, setLastDeleted] = useState<{ envelope: Expense; index: number } | null>(null);
 
+  // Done ones at the bottom, the most recently finished first.
   const byDueMonth = [...envelopes].sort(
-    (a, b) => a.dueMonth.localeCompare(b.dueMonth) || a.name.localeCompare(b.name),
+    (a, b) =>
+      Number(a.done !== undefined) - Number(b.done !== undefined) ||
+      (b.done?.date ?? '').localeCompare(a.done?.date ?? '') ||
+      a.dueMonth.localeCompare(b.dueMonth) ||
+      a.name.localeCompare(b.name),
   );
 
   // The bars and the month names scroll sideways as one: like rulers glued
@@ -119,10 +130,10 @@ export function ExpenseList({
       </h2>
 
       <div className="undo-area" aria-live="polite">
-        {lastPayment !== null && (
+        {lastAction !== null && (
           <p className="undo-bar">
-            <span>{lastPayment.text}</span>
-            <button type="button" className="button-text" onClick={lastPayment.onUndo}>
+            <span>{lastAction.text}</span>
+            <button type="button" className="button-text" onClick={lastAction.onUndo}>
               Undo
             </button>
           </p>
@@ -163,6 +174,7 @@ export function ExpenseList({
                 <li key={envelope.id} className="expense-row expense-row--editing">
                   <ExpenseForm
                     initial={envelope}
+                    paidCents={progress[envelope.id]?.paidCents ?? 0}
                     payday={payday}
                     submitLabel="Save changes"
                     previewFor={previewFor === undefined ? undefined : (fields) => previewFor(fields, envelope.id)}
@@ -180,7 +192,10 @@ export function ExpenseList({
                   envelope={envelope}
                   shareCents={sharesById[envelope.id]}
                   paidCents={progress[envelope.id]?.paidCents ?? 0}
+                  spentCents={progress[envelope.id]?.fromSpendingCents ?? 0}
                   onPay={() => onPay(envelope.id)}
+                  onDone={() => onDone(envelope.id)}
+                  onReopen={() => onReopen(envelope.id)}
                   onEdit={() => openFormFor(envelope.id)}
                   onDelete={() => handleDelete(envelope)}
                   payday={payday}
@@ -204,16 +219,23 @@ interface ExpenseRowProps {
   envelope: Expense;
   /** Its share of the pot; missing once it's paid and settled. */
   shareCents: Cents | undefined;
-  /** Paid towards it so far. */
+  /** Paid towards it so far: from the pot and from spending money. */
   paidCents: Cents;
+  /** Of that, the part from spending money. */
+  spentCents: Cents;
   payday: number;
   onPay: () => void;
+  onDone: () => void;
+  onReopen: () => void;
   onEdit: () => void;
   onDelete: () => void;
   fillUp: ExpenseListProps['fillUp'];
 }
 
-function ExpenseRow({ envelope, shareCents, paidCents, payday, onPay, onEdit, onDelete, fillUp }: ExpenseRowProps) {
+function ExpenseRow({ envelope, shareCents, paidCents, spentCents, payday, onPay, onDone, onReopen, onEdit, onDelete, fillUp }: ExpenseRowProps) {
+  if (envelope.done !== undefined) {
+    return <DoneRow envelope={envelope} done={envelope.done} spentCents={spentCents} paidCents={paidCents} withBar={fillUp !== undefined} onReopen={onReopen} onDelete={onDelete} />;
+  }
   const bar = fillUp?.view.rows[envelope.id];
   const isPaidInFull = paidCents >= envelope.targetCents;
   // What's paid already; the rest of the text is about what's still to pay.
@@ -256,6 +278,9 @@ function ExpenseRow({ envelope, shareCents, paidCents, payday, onPay, onEdit, on
             Pay
           </button>
         )}
+        <button type="button" className="button-text" onClick={onDone} aria-label={`Mark ${envelope.name} as done`}>
+          Done
+        </button>
         <button type="button" className="button-text" onClick={onEdit} aria-label={`Edit ${envelope.name}`}>
           Edit
         </button>
@@ -265,6 +290,55 @@ function ExpenseRow({ envelope, shareCents, paidCents, payday, onPay, onEdit, on
           onClick={onDelete}
           aria-label={`Delete ${envelope.name}`}
         >
+          Delete
+        </button>
+      </div>
+    </li>
+  );
+}
+
+interface DoneRowProps {
+  envelope: Expense;
+  done: DoneStamp;
+  /** Paid for it in total: from the pot and from spending money. */
+  paidCents: Cents;
+  /** Of that, the part from spending money. */
+  spentCents: Cents;
+  /** Keeps the row lined up with the rows that have a bar. */
+  withBar: boolean;
+  onReopen: () => void;
+  onDelete: () => void;
+}
+
+/** A finished expense: what it really cost, kept at the bottom of the list. */
+function DoneRow({ envelope, done, paidCents, spentCents, withBar, onReopen, onDelete }: DoneRowProps) {
+  const { targetCents, name } = envelope;
+  // Payments partly from spending money, plus any extra the pot never paid.
+  const fromSpending = spentCents + Math.max(0, done.costCents - paidCents);
+  const details = [
+    done.costCents === 0 && paidCents === 0
+      ? 'cancelled, nothing spent'
+      : done.costCents === targetCents
+        ? `cost ${formatEuros(done.costCents)}`
+        : `cost ${formatEuros(done.costCents)} (planned ${formatEuros(targetCents)})`,
+    ...(fromSpending > 0 ? [`${formatEuros(fromSpending)} from spending money`] : []),
+    formatDayShort(done.date),
+  ];
+
+  return (
+    <li className={withBar ? 'expense-row expense-row--with-bar expense-row--done' : 'expense-row expense-row--done'}>
+      <div className="expense-text">
+        <p className="expense-name">
+          <span className="done-tag">✓ Done</span> {name}
+        </p>
+        <p className="expense-details">{details.join(' · ')}</p>
+      </div>
+      {withBar && <div className="expense-bar" />}
+      <div className="expense-actions">
+        <button type="button" className="button-text" onClick={onReopen} aria-label={`Reopen ${name}`}>
+          Reopen
+        </button>
+        <button type="button" className="button-text button-text--danger" onClick={onDelete} aria-label={`Delete ${name}`}>
           Delete
         </button>
       </div>
