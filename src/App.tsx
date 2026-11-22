@@ -12,6 +12,7 @@ import { previewExpense, type ExpensePreview } from './engine/expensePreview';
 import { buildFillUpView } from './engine/fillUp';
 import { doneMarks } from './engine/timeline';
 import { buildHistory } from './engine/history';
+import { overdueExpenses } from './engine/overdue';
 import { withShares } from './engine/pot';
 import { previewDone, previewPayment, type PaymentPreview } from './engine/paymentPreview';
 import { addUpParts, coverPaidFirst, finishSplit, fromSpendingById, paidCentsById, progressById, ticksToPayments, withPayments, type ExtraFrom } from './engine/payments';
@@ -21,6 +22,7 @@ import { currentPeriod } from './engine/paychecks';
 import { DEFAULT_PAYDAY, paycheckDates, periodMonth, planningView } from './engine/timing';
 import { PaycheckButton } from './components/PaycheckButton';
 import { DoneDialog } from './components/DoneDialog';
+import { OverdueNotes } from './components/OverdueNotes';
 import { PayDialog, type PayDetails } from './components/PayDialog';
 import type { Expense, ExpenseFields, LogEntry } from './engine/types';
 import { PotPanel } from './components/PotPanel';
@@ -341,6 +343,17 @@ export default function App() {
                 stillOpenCents={showingExample ? undefined : status.openCents}
                 onAddExpense={showingExample ? undefined : openAddForm}
               >
+                {!showingExample && (
+                  <OverdueNotes
+                    overdue={overdueExpenses(savedEnvelopes, today)}
+                    today={today}
+                    onDone={(id) => {
+                      setFinishingFor(id);
+                      setLastAction(null);
+                    }}
+                    onMove={(id, due) => updateEnvelope(id, due.dueDate === undefined ? { dueMonth: due.dueMonth } : due)}
+                  />
+                )}
                 {!showingExample && hasPayday && (
                   <PaycheckButton
                     period={period}
