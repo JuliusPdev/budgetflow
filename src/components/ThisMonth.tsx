@@ -3,7 +3,7 @@ import { ownerOf, type ExpenseProgress } from '../engine/payments';
 import type { MonthPlan } from '../engine/plan';
 import { REFILL_ID } from '../engine/pot';
 import type { Cents, Day, Envelope } from '../engine/types';
-import { formatDayLong, formatDue, formatEuros } from '../utils/format';
+import { formatDayLong, formatDayShort, formatDue, formatEuros } from '../utils/format';
 
 interface ThisMonthProps {
   /** The plan's first month; missing when there is nothing to save for. */
@@ -73,6 +73,8 @@ export function ThisMonth({
     if (existing !== undefined) existing.shareCents += shareCents;
     else goals.push({ owner, envelope, shareCents });
   }
+  // Finished ones keep their line until this paycheck ends, at the bottom like in your expense list.
+  goals.sort((a, b) => Number(a.envelope.done !== undefined) - Number(b.envelope.done !== undefined));
 
   return (
     <section
@@ -159,6 +161,27 @@ function GoalLine({ envelope, shareCents, targetCents, paidCents, coveredCents }
   const progress = Math.min(1, coveredCents / (isRefill ? envelope.targetCents : targetCents));
   const isPaidInFull = paidCents >= targetCents;
   const repayingCents = targetCents - coveredCents;
+  const { done } = envelope;
+
+  // Finished: marked done like in the timeline. Its amount stays, because it's part of this paycheck.
+  if (done !== undefined) {
+    return (
+      <li className="goal goal--done">
+        <div className="goal-top">
+          <span className="goal-name">
+            <span className="done-tag">✓ Done</span> {envelope.name}
+          </span>
+          <span className="goal-share figures">{formatEuros(shareCents)}</span>
+        </div>
+        <div className="goal-bar" aria-hidden="true">
+          <span className="goal-bar-fill" style={{ width: '100%' }} />
+        </div>
+        <p className="goal-detail">
+          Done {formatDayShort(done.date)} · cost {formatEuros(done.costCents)}
+        </p>
+      </li>
+    );
+  }
 
   // Paid in full but early: it tells the putting-back story instead of the saving story.
   const detail = isRefill
