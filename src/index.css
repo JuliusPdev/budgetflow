@@ -856,6 +856,12 @@ ol {
   color: var(--ink-soft);
 }
 
+/* This paycheck's lines you've already set aside, like in the timeline. */
+.pl-goal.is-filled {
+  color: var(--green);
+  font-weight: 500;
+}
+
 .pl-total {
   margin-top: var(--space-1);
   font-weight: 600;

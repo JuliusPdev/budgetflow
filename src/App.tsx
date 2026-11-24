@@ -425,7 +425,7 @@ export default function App() {
                 </p>
               )}
               {layout === 'columns' ? (
-                <LedgerColumns plan={shownPlan} envelopes={shownEnvelopes} payday={settings.payday} currentStart={period.startIsReal ? period.start : undefined} today={today} done={finished} past={past} lateSince={lateSince} />
+                <LedgerColumns plan={shownPlan} envelopes={shownEnvelopes} payday={settings.payday} currentStart={period.startIsReal ? period.start : undefined} today={today} done={finished} past={past} lateSince={lateSince} setAsideSoFarCents={showingExample ? undefined : Math.max(0, status.movements.netCents)} />
               ) : (
                 <LedgerTimeline
                   plan={shownPlan}

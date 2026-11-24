@@ -73,6 +73,11 @@ function FilledLineRow({ line, name }: { line: FilledLine; name: string }) {
   );
 }
 
+/** How much of a column one bill label needs, so labels closer than this go into separate lanes. */
+const LABEL_SPAN = 0.55;
+/** How far each lane of bill labels sits below the one above it. */
+const LANE_REM = 2.5;
+
 /** The day a row belongs to, so a day's date shows once; month lines have none. */
 function dayKey(event: TimelineRow['event']): string | null {
   switch (event.kind) {
@@ -387,7 +392,7 @@ function percent(at: number): string {
  * Money is put aside at its left edge (payday); dashed lines show where a month
  * begins; bills sit on their real day in the "Going out" row.
  */
-export function LedgerColumns({ plan, envelopes, payday, currentStart, today, done, past = [], lateSince }: LedgerProps) {
+export function LedgerColumns({ plan, envelopes, payday, currentStart, today, done, past = [], lateSince, setAsideSoFarCents }: LedgerProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const nowRef = useRef<HTMLElement>(null);
   // Opens at "Now": the earlier paychecks wait to the left, a scroll away.
@@ -401,6 +406,11 @@ export function LedgerColumns({ plan, envelopes, payday, currentStart, today, do
   const layout = buildColumns(plan, envelopes, payday, today, currentStart, done);
   if (layout === null) return null;
   const nameOf = nameLookup(envelopes);
+  const currentBrick = layout.bricks.find((brick) => brick.isCurrent);
+  const filledById =
+    currentBrick === undefined || setAsideSoFarCents === undefined
+      ? undefined
+      : new Map(fillByDeadline(currentBrick.byEnvelope, envelopes, setAsideSoFarCents).map((line) => [line.id, line]));
   // One row per expense: its parts' amounts are added up under its own id.
   const goals = [...envelopes]
     .filter((envelope, index) => envelopes.findIndex((other) => ownerOf(other) === ownerOf(envelope)) === index)
@@ -458,6 +468,15 @@ export function LedgerColumns({ plan, envelopes, payday, currentStart, today, do
             const to = index === bill.end.brick ? bill.end.at : 1;
             return [{ bill, from, to, isFirst: index === bill.start.brick }];
           });
+          // Labels closer than about half a column would overlap: each one too close to the last in its lane moves down a lane.
+          const laneEnds: number[] = [];
+          const laneOf = new Map<(typeof bills)[number], number>();
+          for (const item of [...bills].filter((candidate) => candidate.isFirst).sort((a, b) => a.from - b.from)) {
+            let lane = laneEnds.findIndex((lastFrom) => item.from - lastFrom >= LABEL_SPAN);
+            if (lane === -1) lane = laneEnds.length;
+            laneEnds[lane] = item.from;
+            laneOf.set(item, lane);
+          }
           const label = dates === null ? formatMonthLong(brick.paycheck) : `Paycheck ${dates}`;
 
           return (
@@ -489,12 +508,18 @@ export function LedgerColumns({ plan, envelopes, payday, currentStart, today, do
               </span>
               {goals.map((envelope) => {
                 const cents = brick.byEnvelope[envelope.id];
+                // This paycheck only: what you've set aside fills its lines, closest deadline first, like the timeline.
+                const filled = brick.isCurrent ? filledById?.get(envelope.id) : undefined;
+                const isFull = filled !== undefined && filled.plannedCents > 0 && filled.filledCents >= filled.plannedCents;
+                const isPart = filled !== undefined && filled.filledCents > 0 && !isFull;
                 return (
-                  <span key={envelope.id} className="pl-cell pl-goal figures">
+                  <span key={envelope.id} className={isFull ? 'pl-cell pl-goal figures is-filled' : 'pl-cell pl-goal figures'}>
                     {cents !== undefined && (
                       <>
                         <span className="sr-only">{envelope.name}: </span>
-                        {formatEuros(cents)}
+                        {isFull && <span aria-hidden="true">✓ </span>}
+                        {isPart ? `${formatEuros(filled.filledCents)} of ${formatEuros(cents)}` : formatEuros(cents)}
+                        {isFull && <span className="sr-only"> (set aside)</span>}
                       </>
                     )}
                   </span>
@@ -504,8 +529,10 @@ export function LedgerColumns({ plan, envelopes, payday, currentStart, today, do
                 <span className="sr-only">Put aside: </span>
                 {formatEuros(brick.totalCents)}
               </span>
-              <span className="pl-cell pl-out">
-                {bills.map(({ bill, from, to, isFirst }) => {
+              <span className="pl-cell pl-out" style={laneEnds.length > 1 ? { minHeight: `${3.75 + (laneEnds.length - 1) * LANE_REM}rem` } : undefined}>
+                {bills.map((item) => {
+                  const { bill, from, to, isFirst } = item;
+                  const lane = laneOf.get(item) ?? 0;
                   const key = `${bill.date ?? bill.month}-${bill.envelopeIds.join('+')}`;
                   const when = bill.date === undefined ? 'any day' : formatDayShort(bill.date);
                   return (
@@ -516,7 +543,7 @@ export function LedgerColumns({ plan, envelopes, payday, currentStart, today, do
                         <span className="pl-bill-dot" style={{ left: percent(from) }} />
                       )}
                       {isFirst && (
-                        <span className="pl-bill-label" style={{ left: percent(from) }}>
+                        <span className="pl-bill-label" style={{ left: percent(from), top: `calc(20px + ${lane * LANE_REM}rem)` }}>
                           <span className="figures">−{formatEuros(bill.amountCents)}</span>
                           <span className="pl-bill-names">
                             {[...new Set(bill.envelopeIds.map(nameOf))].join(', ')} · {when}
