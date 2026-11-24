@@ -4,6 +4,7 @@ import type { MonthPlan } from '../engine/plan';
 import type { Cents, Day, LogEntry, SetAsideEntry } from '../engine/types';
 import { centsToInputText, parseEurosToCents } from '../utils/expenseDraft';
 import { formatEuros } from '../utils/format';
+import { ModalDialog } from './ModalDialog';
 
 interface MonthProgressProps {
   /** This month's plan, calculated from where things stood at the start of the month. */
@@ -33,6 +34,8 @@ export function MonthProgress({ monthPlan, status, log, today, periodName, onLog
     null,
   );
   const fieldId = useId();
+  // The amount field lives in a window that the "Log a set-aside" button opens.
+  const [isOpen, setIsOpen] = useState(false);
 
   const amountCents = parseEurosToCents(amountText);
   // More than this period needs isn't wasted: it stays in the pot and lowers what comes next.
@@ -48,6 +51,14 @@ export function MonthProgress({ monthPlan, status, log, today, periodName, onLog
     setLastLogged({ id, amountCents, extraCents });
     setTypedText(null);
     setError(null);
+    setIsOpen(false);
+  }
+
+  function openLog(): void {
+    setTypedText(null);
+    setError(null);
+    setLastLogged(null);
+    setIsOpen(true);
   }
 
   function handleUndo(): void {
@@ -58,17 +69,14 @@ export function MonthProgress({ monthPlan, status, log, today, periodName, onLog
   }
 
   const progress = openCents === 0 || monthPlan.totalCents === 0 ? 1 : Math.min(1, loggedCents / monthPlan.totalCents);
-  const isDone = openCents === 0;
   // Only explain when something other than set-asides changed the pot this period.
   const explanation = describeMovements(movements);
 
   return (
     <div className="month-progress">
-      <p className="progress-line">
-        <span>Set aside so far</span>
-        <span className="figures">
-          {formatEuros(loggedCents)} of {formatEuros(monthPlan.totalCents)}
-        </span>
+      <p className="hero-sub">
+        <span className="hero-sub-amount figures">{formatEuros(loggedCents)}</span> of{' '}
+        <span className="figures">{formatEuros(monthPlan.totalCents)}</span> set aside
       </p>
       <div
         className="goal-bar progress-bar"
@@ -82,49 +90,15 @@ export function MonthProgress({ monthPlan, status, log, today, periodName, onLog
         <span className="goal-bar-fill" style={{ width: `${progress * 100}%` }} />
       </div>
       {explanation !== null && <p className="field-hint">{explanation}</p>}
-      {isDone && <p className="progress-done sync-dot">Done for {periodName}</p>}
       {aheadCents > 0 && (
         <p className="field-hint">
           {formatEuros(aheadCents)} more than {periodName} needs, so your next paychecks ask less.
         </p>
       )}
 
-      <form className="log-form" onSubmit={handleSubmit} noValidate>
-        <div className="field">
-          <label htmlFor={`${fieldId}-amount`}>Amount you put aside (€)</label>
-          <div className="log-row">
-            <input
-              id={`${fieldId}-amount`}
-              type="text"
-              inputMode="decimal"
-              placeholder="0"
-              value={amountText}
-              aria-invalid={error !== null}
-              aria-describedby={`${fieldId}-hint`}
-              onChange={(event) => {
-                setTypedText(event.target.value);
-                setError(null);
-              }}
-            />
-            <button type="submit" className="button-primary">
-              Log set-aside
-            </button>
-          </div>
-          <div id={`${fieldId}-hint`}>
-            {error !== null && (
-              <p className="field-error" role="alert">
-                {error}
-              </p>
-            )}
-            {extraCents > 0 && (
-              <p className="field-hint">
-                {formatEuros(extraCents)} more than this period needs. It stays in the pot and lowers your next
-                set-asides.
-              </p>
-            )}
-          </div>
-        </div>
-      </form>
+      <button type="button" className="button-primary log-open" onClick={openLog}>
+        Log a set-aside
+      </button>
 
       <div aria-live="polite">
         {lastLogged !== null && log.some((entry) => entry.id === lastLogged.id) && (
@@ -140,6 +114,55 @@ export function MonthProgress({ monthPlan, status, log, today, periodName, onLog
           </p>
         )}
       </div>
+
+      {isOpen && (
+        <ModalDialog title="Log a set-aside" onClose={() => setIsOpen(false)}>
+          <form className="dialog-form" onSubmit={handleSubmit} noValidate>
+            <p className="field-hint">
+              {openCents > 0
+                ? `${formatEuros(openCents)} still to put aside for ${periodName}.`
+                : `${periodName.charAt(0).toUpperCase()}${periodName.slice(1)} is done; anything more lowers your next set-asides.`}
+            </p>
+            <div className="field">
+              <label htmlFor={`${fieldId}-amount`}>Amount you put aside (€)</label>
+              <input
+                id={`${fieldId}-amount`}
+                type="text"
+                inputMode="decimal"
+                placeholder="0"
+                value={amountText}
+                aria-invalid={error !== null}
+                aria-describedby={`${fieldId}-hint`}
+                onChange={(event) => {
+                  setTypedText(event.target.value);
+                  setError(null);
+                }}
+              />
+              <div id={`${fieldId}-hint`}>
+                {error !== null && (
+                  <p className="field-error" role="alert">
+                    {error}
+                  </p>
+                )}
+                {extraCents > 0 && (
+                  <p className="field-hint">
+                    {formatEuros(extraCents)} more than this period needs. It stays in the pot and lowers your next
+                    set-asides.
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className="form-actions">
+              <button type="submit" className="button-primary">
+                Log set-aside
+              </button>
+              <button type="button" className="button-secondary" onClick={() => setIsOpen(false)}>
+                Cancel
+              </button>
+            </div>
+          </form>
+        </ModalDialog>
+      )}
     </div>
   );
 }

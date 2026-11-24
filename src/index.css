@@ -1,26 +1,30 @@
-/* BudgetFlow — "ledger book" look: warm paper, forest green for saving,
-   terracotta for money going out, serif headings, monospaced figures. */
+/* BudgetFlow — bold and clean: off-white page, white cards without outlines,
+   near-black type, one grotesk typeface, green for saving, terracotta for
+   money going out. */
 
 :root {
-  /* Paper and ink */
-  --paper: #f5f0e6;
-  --paper-raised: #fbf8f1;
-  --ink: #22261f;
-  --ink-soft: #4a4d43;
-  --dim: #6b6a5e;
-  --line: #ddd5c4;
-  --line-soft: #e8e1d2;
+  /* Page and ink */
+  --paper: #efefec;
+  --paper-raised: #ffffff;
+  --ink: #0b0c0b;
+  --ink-soft: #3d403c;
+  --dim: #6b6e6a;
+  --line: #dcdcd6;
+  --line-soft: #ebebe7;
+  /* Input fields: a light fill so they stand out on white cards. */
+  --field: #f6f6f3;
+  --backdrop: rgb(11 12 11 / 0.4);
 
   /* Meaning */
-  --green: #2f5d50; /* saving */
-  --green-soft: #dce6df;
-  --terracotta: #a84b24; /* money going out */
-  --terracotta-soft: #f2ddd2;
+  --green: #0a7d4f; /* saving; dark enough to read as text on white */
+  --green-soft: #e1f2e9;
+  --terracotta: #b8461b; /* money going out */
+  --terracotta-soft: #f6e1d6;
 
-  /* Type */
-  --font-display: 'Newsreader', Georgia, serif;
-  --font-body: 'IBM Plex Sans', system-ui, sans-serif;
-  --font-figures: 'IBM Plex Mono', ui-monospace, monospace;
+  /* Type: one typeface everywhere; headings are bold, figures equal-width. */
+  --font-display: 'Schibsted Grotesk', system-ui, sans-serif;
+  --font-body: 'Schibsted Grotesk', system-ui, sans-serif;
+  --font-figures: 'Schibsted Grotesk', system-ui, sans-serif;
 
   /* Spacing steps */
   --space-1: 4px;
@@ -30,7 +34,9 @@
   --space-5: 32px;
   --space-6: 48px;
 
-  --radius: 4px;
+  --radius: 12px;
+  /* The big white cards. */
+  --radius-card: 18px;
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -152,8 +158,7 @@ ol {
   gap: var(--space-5);
   padding: var(--space-4);
   background: var(--paper-raised);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
+  border-radius: var(--radius-card);
 }
 
 .this-month-title {
@@ -163,27 +168,6 @@ ol {
   font-weight: 400;
   line-height: 1.1;
   letter-spacing: -0.02em;
-}
-
-.headline {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--space-3);
-  margin-top: var(--space-4);
-}
-
-.headline-label {
-  font-size: 1rem;
-  color: var(--ink-soft);
-}
-
-.headline-amount {
-  font-size: clamp(2.25rem, 7vw, 3.25rem);
-  font-weight: 500;
-  line-height: 1;
-  letter-spacing: -0.03em;
-  color: var(--green);
 }
 
 .goals {
@@ -383,8 +367,7 @@ ol {
   gap: var(--space-4);
   padding: var(--space-5) var(--space-4);
   background: var(--paper-raised);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
+  border-radius: var(--radius-card);
 }
 
 .empty-start-text {
@@ -393,113 +376,161 @@ ol {
   color: var(--ink-soft);
 }
 
-/* This month's progress */
+/* The top of the card: today, the paycheck you're in and how far along it is. */
+
+.paycheck-strip {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.strip-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-size: 0.8125rem;
+  color: var(--dim);
+}
+
+.strip-today {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.strip-dates {
+  min-height: 32px;
+  padding: 0;
+  font: inherit;
+  color: var(--dim);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.strip-dates:hover {
+  color: var(--ink);
+}
+
+/* A plain thin line: no dot, no marker. */
+.strip-bar {
+  height: 2px;
+  overflow: hidden;
+  background: var(--line-soft);
+  border-radius: 1px;
+}
+
+.strip-bar-fill {
+  display: block;
+  height: 100%;
+  background: var(--dim);
+}
+
+.strip-ends,
+.strip-due {
+  font-size: 0.75rem;
+}
+
+/* On a narrow phone the sentence wraps, so "Log paycheck" stays at the end of its line. */
+.strip-due {
+  flex-wrap: nowrap;
+}
+
+.strip-due > span {
+  min-width: 0;
+}
+
+.strip-log {
+  flex: none;
+}
+
+/* Only there once the paycheck is expected, and kept quiet. */
+.strip-log {
+  min-height: 32px;
+  padding: 0 var(--space-2);
+  font: inherit;
+  font-weight: 500;
+  color: var(--ink-soft);
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.strip-log:hover {
+  color: var(--ink);
+  border-color: var(--ink-soft);
+}
+
+.paycheck-strip .undo-bar {
+  margin: 0;
+}
+
+/* One number in the middle. */
+
+.hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  margin-top: var(--space-5);
+  text-align: center;
+}
+
+.hero-label {
+  font-size: 0.875rem;
+  font-weight: 400;
+  color: var(--dim);
+}
+
+.hero-amount {
+  font-size: clamp(3.25rem, 17vw, 5.5rem);
+  font-weight: 700;
+  line-height: 0.95;
+  letter-spacing: -0.05em;
+  color: var(--ink);
+}
+
+/* This paycheck's progress, under the number. */
 
 .month-progress {
   display: grid;
-  gap: var(--space-2);
-  margin-top: var(--space-4);
-  padding-top: var(--space-4);
-  border-top: 1px solid var(--line);
+  gap: var(--space-3);
+  margin-top: var(--space-2);
 }
 
-.progress-line {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: var(--space-2);
-  font-size: 0.9375rem;
-  color: var(--ink-soft);
+.hero-sub {
+  font-size: 0.875rem;
+  text-align: center;
+  color: var(--dim);
 }
 
-.progress-line .figures {
-  color: var(--ink);
+.hero-sub-amount {
+  font-weight: 600;
+  color: var(--green);
 }
 
 .progress-bar {
   height: 8px;
-  margin: 0;
+  margin: var(--space-2) 0 0;
 }
 
-.progress-done {
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--green);
-}
-
-.log-form {
-  margin-top: var(--space-2);
-}
-
-.log-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.log-row input {
-  flex: 1 1 8rem;
-  min-width: 0;
+.log-open {
+  width: 100%;
+  min-height: 52px;
+  font-size: 1rem;
+  font-weight: 700;
 }
 
 .month-progress .undo-bar {
   margin: 0;
 }
 
-.headline-done {
-  font-family: var(--font-display);
-  color: var(--green);
-}
-
-/* ─── Paycheck ──────────────────────────────────────────────────────────── */
-
-.paycheck {
+/* Forms inside windows. */
+.dialog-form {
+  display: grid;
+  gap: var(--space-3);
   margin-top: var(--space-3);
-}
-
-.paycheck-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-}
-
-/* The expected payday has passed: make the question hard to miss. */
-.paycheck--due .paycheck-row {
-  padding: var(--space-3);
-  background: var(--green-soft);
-  border-radius: var(--radius);
-}
-
-.paycheck--due .field-hint {
-  font-size: 0.9375rem;
-  color: var(--ink);
-}
-
-.paycheck-form {
-  display: grid;
-  gap: var(--space-3);
-  padding: var(--space-3);
-  background: var(--paper);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-}
-
-.paycheck-title {
-  font-weight: 600;
-}
-
-.paycheck-fields {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-3);
-}
-
-@media (min-width: 640px) {
-  .paycheck-fields {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 
 /* Said plainly when the pot switches to protecting the next bills. */
@@ -553,9 +584,10 @@ ol {
   background: var(--line-soft);
 }
 
+/* Selected like the main buttons: near-black. Green stays for saving. */
 .layout-toggle button[aria-pressed='true'] {
   color: var(--paper-raised);
-  background: var(--green);
+  background: var(--ink);
 }
 
 /* Timeline: events on their real days, months in the margin, paychecks as bands */
@@ -1204,7 +1236,7 @@ ol {
 }
 
 .expense-dialog::backdrop {
-  background: rgb(34 38 31 / 0.35);
+  background: var(--backdrop);
 }
 
 .expense-dialog-head {
@@ -1289,7 +1321,7 @@ ol {
   padding: 0 12px;
   font: inherit;
   color: var(--ink);
-  background: #fff;
+  background: var(--field);
   border: 1px solid var(--line);
   border-radius: var(--radius);
 }
@@ -1402,12 +1434,12 @@ ol {
 
 .button-primary {
   color: var(--paper-raised);
-  background: var(--green);
-  border: 1px solid var(--green);
+  background: var(--ink);
+  border: 1px solid var(--ink);
 }
 
 .button-primary:hover {
-  background: #244a3f;
+  background: var(--ink-soft);
 }
 
 .button-secondary {
@@ -1508,8 +1540,7 @@ ol {
 .expense-new {
   padding: var(--space-4);
   background: var(--paper-raised);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
+  border-radius: var(--radius-card);
 }
 
 /* ─── Expense form ────────────────────────────────────────────────────────── */
@@ -1540,7 +1571,7 @@ ol {
   font: inherit;
   font-size: 1rem;
   color: var(--ink);
-  background: #fff;
+  background: var(--field);
   border: 1px solid var(--line);
   border-radius: var(--radius);
 }
@@ -1674,7 +1705,7 @@ ol {
   font: inherit;
   font-size: 1rem;
   color: var(--ink);
-  background: #fff;
+  background: var(--field);
   border: 1px solid var(--line);
   border-radius: var(--radius);
 }
@@ -1699,8 +1730,7 @@ ol {
   gap: var(--space-3);
   padding: var(--space-4);
   background: var(--paper-raised);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
+  border-radius: var(--radius-card);
 }
 
 .take-out-title {
@@ -1866,7 +1896,7 @@ ol {
   font: inherit;
   font-size: 1rem;
   color: var(--ink);
-  background: #fff;
+  background: var(--field);
   border: 1px solid var(--line);
   border-radius: var(--radius);
 }
@@ -1948,7 +1978,7 @@ ol {
   font: inherit;
   font-size: 1rem;
   color: var(--ink);
-  background: #fff;
+  background: var(--field);
   border: 1px solid var(--line);
   border-radius: var(--radius);
 }
@@ -2029,4 +2059,19 @@ ol {
   .button-text {
     transition: none;
   }
+}
+
+/* ─── Bold sans headings ──────────────────────────────────────────────────── */
+/* The headings used to be a light serif; in one grotesk they carry weight instead. */
+.wordmark,
+.this-month-title,
+.ledger-title,
+.tl-month,
+.pl-months,
+.fu-month,
+.expense-dialog-title,
+.expenses-title,
+.take-out-title {
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }

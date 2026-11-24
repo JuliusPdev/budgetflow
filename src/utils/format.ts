@@ -11,6 +11,7 @@ const longMonthFormat = new Intl.DateTimeFormat('en-GB', { month: 'long', year: 
 const shortDayFormat = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' });
 const longDayFormat = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
 const dayWithYearFormat = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+const weekdayFormat = new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
 
 /** 24546 → "€245.46", 27400 → "€274" (whole euros without ".00"). */
 export function formatEuros(cents: Cents): string {
@@ -54,6 +55,11 @@ export function ordinal(day: number): string {
   if (day >= 11 && day <= 13) return `${day}th`;
   const suffix = ({ 1: 'st', 2: 'nd', 3: 'rd' } as Record<number, string>)[day % 10] ?? 'th';
   return `${day}${suffix}`;
+}
+
+/** "2026-11-25" → "Wed 25 Nov" */
+export function formatWeekdayShort(day: Day): string {
+  return weekdayFormat.format(dayToDate(day));
 }
 
 /** "2026-11-17" → "17 November 2026" */

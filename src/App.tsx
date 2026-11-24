@@ -20,7 +20,7 @@ import { potCents } from './engine/savingsLog';
 import { periodStatus, shareByRule } from './engine/period';
 import { currentPeriod } from './engine/paychecks';
 import { DEFAULT_PAYDAY, paycheckDates, periodMonth, planningView } from './engine/timing';
-import { PaycheckButton } from './components/PaycheckButton';
+import { PaycheckStrip } from './components/PaycheckStrip';
 import { DoneDialog } from './components/DoneDialog';
 import { OverdueNotes } from './components/OverdueNotes';
 import { PayDialog, type PayDetails } from './components/PayDialog';
@@ -361,28 +361,20 @@ export default function App() {
                 today={dayOfDate(new Date())}
                 stillOpenCents={showingExample ? undefined : status.openCents}
                 onAddExpense={showingExample ? undefined : openAddForm}
+                strip={
+                  !showingExample && hasPayday && paycheckLabel !== undefined ? (
+                    <PaycheckStrip
+                      period={period}
+                      log={log}
+                      payday={settings.payday}
+                      today={today}
+                      paycheckLabel={paycheckLabel}
+                      onLog={(details) => logPaycheck({ ...details, ...closingSplit() })}
+                      onUndo={deleteLogEntry}
+                    />
+                  ) : undefined
+                }
               >
-                {!showingExample && (
-                  <OverdueNotes
-                    overdue={overdueExpenses(savedEnvelopes, today)}
-                    today={today}
-                    onDone={(id) => {
-                      setFinishingFor(id);
-                      setLastAction(null);
-                    }}
-                    onMove={(id, due) => updateEnvelope(id, due.dueDate === undefined ? { dueMonth: due.dueMonth } : due)}
-                  />
-                )}
-                {!showingExample && hasPayday && (
-                  <PaycheckButton
-                    period={period}
-                    log={log}
-                    payday={settings.payday}
-                    today={today}
-                    onLog={(details) => logPaycheck({ ...details, ...closingSplit() })}
-                    onUndo={deleteLogEntry}
-                  />
-                )}
                 {!showingExample && plan[0] !== undefined && (
                   <MonthProgress
                     monthPlan={plan[0]}
@@ -392,6 +384,17 @@ export default function App() {
                     periodName={periodName}
                     onLog={logSetAside}
                     onUndo={deleteLogEntry}
+                  />
+                )}
+                {!showingExample && (
+                  <OverdueNotes
+                    overdue={overdueExpenses(savedEnvelopes, today)}
+                    today={today}
+                    onDone={(id) => {
+                      setFinishingFor(id);
+                      setLastAction(null);
+                    }}
+                    onMove={(id, due) => updateEnvelope(id, due.dueDate === undefined ? { dueMonth: due.dueMonth } : due)}
                   />
                 )}
               </ThisMonth>

@@ -3,7 +3,7 @@ import { ownerOf, type ExpenseProgress } from '../engine/payments';
 import type { MonthPlan } from '../engine/plan';
 import { REFILL_ID } from '../engine/pot';
 import type { Cents, Day, Envelope } from '../engine/types';
-import { formatDayLong, formatDayShort, formatDue, formatEuros } from '../utils/format';
+import { formatDayShort, formatDue, formatEuros, formatWeekdayShort } from '../utils/format';
 
 interface ThisMonthProps {
   /** The plan's first month; missing when there is nothing to save for. */
@@ -27,6 +27,8 @@ interface ThisMonthProps {
   closestFirst?: boolean;
   /** Opens the add-an-expense dialog; missing while examples are shown. */
   onAddExpense?: () => void;
+  /** The top of the card: today and the paycheck you're in. Without one, the date and "This month". */
+  strip?: ReactNode;
   /** Extra content under the headline amount, e.g. this month's progress. */
   children?: ReactNode;
 }
@@ -42,6 +44,7 @@ export function ThisMonth({
   stillOpenCents,
   closestFirst = false,
   onAddExpense,
+  strip,
   children,
 }: ThisMonthProps) {
   const addButton = onAddExpense !== undefined && (
@@ -100,34 +103,34 @@ export function ThisMonth({
       aria-labelledby="this-month-title"
     >
       <div className="this-month-headline">
-        <p className="eyebrow">
-          {paycheckLabel === undefined ? 'This month' : `Current paycheck · ${paycheckLabel}`}
-          {isExample && <span className="example-tag">Example</span>}
-        </p>
-        <h1 id="this-month-title" className="this-month-title">
-          {formatDayLong(today)}
-        </h1>
-        {stillOpenCents === undefined ? (
-          <p className="headline">
-            <span className="headline-label">Put aside</span>
-            <span className="headline-amount figures">{formatEuros(monthPlan.totalCents)}</span>
-          </p>
-        ) : (
-          // The big number is only what's still missing, so it never looks owed once it's done.
-          <p className="headline">
-            {stillOpenCents > 0 ? (
-              <>
-                <span className="headline-label">Still to put aside</span>
-                <span className="headline-amount figures">{formatEuros(stillOpenCents)}</span>
-              </>
-            ) : (
-              <>
-                <span className="headline-label">{paycheckLabel === undefined ? 'This month' : 'This paycheck'}</span>
-                <span className="headline-amount headline-done">Done</span>
-              </>
-            )}
+        {strip ?? (
+          <p className="strip-row">
+            <span className="strip-today">{formatWeekdayShort(today)}</span>
+            <span className="strip-label">
+              {paycheckLabel === undefined ? 'This month' : `Paycheck ${paycheckLabel}`}
+              {isExample && <span className="example-tag">Example</span>}
+            </span>
           </p>
         )}
+        {/* One number in the middle: what's still missing, so it never looks owed once it's done. */}
+        <h1 id="this-month-title" className="hero">
+          {stillOpenCents === undefined ? (
+            <>
+              <span className="hero-label">Put aside</span>
+              <span className="hero-amount figures">{formatEuros(monthPlan.totalCents)}</span>
+            </>
+          ) : stillOpenCents > 0 ? (
+            <>
+              <span className="hero-label">Still to put aside</span>
+              <span className="hero-amount figures">{formatEuros(stillOpenCents)}</span>
+            </>
+          ) : (
+            <>
+              <span className="hero-label">{paycheckLabel === undefined ? 'This month' : 'This paycheck'}</span>
+              <span className="hero-amount">Done</span>
+            </>
+          )}
+        </h1>
         {children}
       </div>
 
