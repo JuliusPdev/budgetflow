@@ -279,10 +279,9 @@ export function LedgerTimeline({ plan, envelopes, payday, currentStart, today, d
               <span className="tl-date">{event.date === undefined ? 'Any day' : formatDayShort(event.date)}</span>
               <span className="tl-body">
                 <span className="tl-head">
-                  <span>{nameOf(event.envelopeId)}</span>
+                  <span>{event.isPaid ? `Paid · ${nameOf(event.envelopeId)}` : nameOf(event.envelopeId)}</span>
                   <span className="figures">−{formatEuros(event.amountCents)}</span>
                 </span>
-                {event.isPaid && <span className="tl-sub">Already paid · being put back</span>}
               </span>
             </span>
           </li>

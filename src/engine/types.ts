@@ -43,6 +43,8 @@ export interface Expense {
   paidMonth?: Month;
   /** Only on calculated parts, never stored: the expense this part belongs to. */
   partOf?: string;
+  /** Only on calculated paid parts, never stored: the day it was paid. */
+  paidOn?: Day;
   /** Set once it's over: the plan stops putting money aside for it. */
   done?: DoneStamp;
 }

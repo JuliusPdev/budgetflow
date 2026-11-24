@@ -71,6 +71,7 @@ export function withPayments<T extends Expense>(expenses: T[], log: LogEntry[], 
         partOf: expense.id,
         targetCents: payment.amountCents,
         paidMonth: paycheckMonthOf(payment.date, payday),
+        paidOn: payment.date,
       }),
     );
     return [...stillToPay, ...paidParts];

@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { planSetAside } from './plan';
 import { buildTimeline, doneMarks, type TimelineRow } from './timeline';
 import { planningView } from './timing';
-import type { Envelope } from './types';
+import { withPayments } from './payments';
+import type { Envelope, LogEntry } from './types';
 
 // Made-up amounts. Payday on the 21st; today is 20 Nov, still in the 21 Oct paycheck.
 const PAYDAY = 21;
@@ -106,5 +107,29 @@ describe('the timeline', () => {
       0,
     );
     expect(inCents).toBe(plan.reduce((sum, month) => sum + month.totalCents, 0));
+  });
+});
+
+describe('payments in the timeline', () => {
+  // Made-up: a €220 musical due in December, paid on 24 Nov, three days into the 21 Nov paycheck.
+  const NOW = '2026-11-24';
+  const START = '2026-11-21';
+  const musical: Envelope = { id: 'musical', name: 'Musical', targetCents: 22_000, dueMonth: '2026-12', savedCents: 0 };
+  const log: LogEntry[] = [{ id: 'p', kind: 'payment', date: NOW, envelopeId: 'musical', amountCents: 22_000 }];
+
+  function rowsFor(expense: Envelope): TimelineRow[] {
+    const parts = withPayments([gifts, expense], log, PAYDAY);
+    return buildTimeline(planSetAside(parts, '2026-11'), parts, PAYDAY, NOW, START, doneMarks([expense]));
+  }
+
+  it('sit on the day you paid, after the paycheck began', () => {
+    const rows = rowsFor(musical).map(describeRow);
+    expect(rows.indexOf('out musical~p 2026-11-24 · band 2026-11')).toBeGreaterThan(rows.indexOf('in 2026-11-21 · band 2026-11'));
+  });
+
+  it('are part of the ✓ Done line once the expense is finished', () => {
+    const finished: Envelope = { ...musical, done: { date: NOW, costCents: 22_000, paymentId: 'p' } };
+    const rows = rowsFor(finished);
+    expect(rows.map(describeRow).filter((row) => row.includes('musical'))).toEqual(['done musical 2026-11-24 · band 2026-11']);
   });
 });

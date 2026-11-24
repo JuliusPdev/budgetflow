@@ -1,7 +1,7 @@
 import { addMonths } from './months';
 import type { MonthPlan } from './plan';
 import { paycheckDates } from './timing';
-import type { DoneMark } from './timeline';
+import { whenBillLeaves, type DoneMark } from './timeline';
 import type { Cents, Day, Expense, Month } from './types';
 
 // The plan as a wall planner: one equally wide column ("brick") per paycheck,
@@ -116,10 +116,11 @@ export function buildColumns(
     for (const [envelopeId, amountCents] of Object.entries(monthPlan.billsOut)) {
       const envelope = byId.get(envelopeId);
       if (envelope === undefined) continue;
-      const { paidMonth, dueDate } = envelope;
-      let month = paidMonth ?? envelope.dueMonth;
-      if (paidMonth === undefined && month < thisMonth) month = thisMonth;
-      const date = paidMonth === undefined && dueDate?.slice(0, 7) === month ? dueDate : undefined;
+      const when = whenBillLeaves(envelope, thisMonth);
+      if (when === null) continue;
+      // Payments from before the paychecks shown are in the earlier ones.
+      if (envelope.paidMonth !== undefined && when.date !== undefined && when.date < rangeStart) continue;
+      const { month, date } = when;
       const key = date ?? `any ${month}`;
       const existing = groups.get(key);
       if (existing !== undefined) {

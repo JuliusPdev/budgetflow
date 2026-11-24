@@ -24,10 +24,10 @@ export type TimelineEvent =
       date: Day | undefined;
       envelopeId: string;
       amountCents: Cents;
-      /** Already paid early: shown so the repayments make sense. */
+      /** A payment: on the day you paid. */
       isPaid: boolean;
     }
-  /** An expense you finished, on the day you finished it. */
+  /** An expense you finished, on the day you finished it; its payments are part of it. */
   | { kind: 'done'; mark: DoneMark }
   /** Looking back: where a past paycheck began, with what you really put aside in it. */
   | { kind: 'past-paycheck'; date: Day; last: Day; paycheck: Month; putAsideCents: Cents }
@@ -57,6 +57,23 @@ export function doneMarks(expenses: Expense[]): DoneMark[] {
         : [{ expenseId: expense.id, name: expense.name, date: expense.done.date, costCents: expense.done.costCents, plannedCents: expense.targetCents }],
     )
     .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/**
+ * When a bill leaves the pot, or null when it isn't shown on its own:
+ *   - a payment towards a finished expense is part of its ✓ Done line;
+ *   - a payment is on the day you paid;
+ *   - a bill not paid yet is on its due day, or "any day" in its month. A bill
+ *     whose month has passed unpaid is due now, so it moves to today's month.
+ */
+export function whenBillLeaves(part: Expense, thisMonth: Month): { month: Month; date: Day | undefined } | null {
+  if (part.paidMonth !== undefined) {
+    if (part.done !== undefined) return null;
+    return part.paidOn === undefined ? { month: part.paidMonth, date: undefined } : { month: part.paidOn.slice(0, 7), date: part.paidOn };
+  }
+  const month = part.dueMonth < thisMonth ? thisMonth : part.dueMonth;
+  // The exact day only while it's still in the month shown (not for overdue bills).
+  return { month, date: part.dueDate?.slice(0, 7) === month ? part.dueDate : undefined };
 }
 
 export interface TimelineRow {
@@ -100,6 +117,8 @@ export function buildTimeline(
   const thisMonth = today.slice(0, 7);
   const firstPaycheck = plan[0].month;
   const lastPaycheck = plan[plan.length - 1].month;
+  // Where the paychecks shown begin: older payments are in "earlier paychecks".
+  const shownFrom = currentStart ?? paycheckDates(firstPaycheck, payday).last;
   const placed: Placed[] = [];
 
   /** The band a day falls in, kept within the paychecks shown. */
@@ -128,12 +147,11 @@ export function buildTimeline(
     for (const [envelopeId, amountCents] of Object.entries(monthPlan.billsOut)) {
       const envelope = byId.get(envelopeId);
       if (envelope === undefined) continue;
-      const { paidMonth, dueDate } = envelope;
-      const isPaid = paidMonth !== undefined;
-      let month = paidMonth ?? envelope.dueMonth;
-      if (!isPaid && month < thisMonth) month = thisMonth;
-      // The exact day only while it's still in the month shown (not for overdue or paid bills).
-      const day = !isPaid && dueDate !== undefined && dueDate.slice(0, 7) === month ? dueDate : undefined;
+      const when = whenBillLeaves(envelope, thisMonth);
+      if (when === null) continue;
+      const isPaid = envelope.paidMonth !== undefined;
+      if (isPaid && when.date !== undefined && when.date < shownFrom) continue;
+      const { month, date: day } = when;
       // A month-only bill counts from the 1st: the money must be ready by then.
       const counted = day ?? `${month}-01`;
       place(month, counted.slice(8, 10), { kind: 'bill', date: day, envelopeId, amountCents, isPaid }, bandOf(counted));
@@ -141,7 +159,6 @@ export function buildTimeline(
   });
 
   // Finished in the paycheck shown at the top: older ones need looking back.
-  const shownFrom = currentStart ?? paycheckDates(firstPaycheck, payday).last;
   for (const mark of done) {
     if (mark.date < shownFrom || mark.date > today) continue;
     place(mark.date.slice(0, 7), mark.date.slice(8, 10), { kind: 'done', mark }, firstPaycheck);
