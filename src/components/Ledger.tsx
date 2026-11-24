@@ -5,8 +5,9 @@ import type { MonthPlan } from '../engine/plan';
 import { ownerOf } from '../engine/payments';
 import { buildColumns } from '../engine/columns';
 import { addMonths } from '../engine/months';
+import { fillByDeadline, type FilledLine } from '../engine/setAsideProgress';
 import { buildTimeline, type DoneMark, type TimelineRow } from '../engine/timeline';
-import type { Day, Envelope, Month } from '../engine/types';
+import type { Cents, Day, Envelope, Month } from '../engine/types';
 import { formatDayShort, formatEuros, formatMonthLong, formatMonthShort, formatPeriod } from '../utils/format';
 
 // Two arrangements of the same plan. They only lay numbers out differently —
@@ -25,6 +26,8 @@ interface LedgerProps {
   done?: DoneMark[];
   /** The paychecks before this one, as they really happened, oldest first. */
   past?: PastPaycheck[];
+  /** What you've set aside this paycheck so far: fills its lines, closest deadline first. */
+  setAsideSoFarCents?: Cents;
 }
 
 /** A finished expense: ✓, its name, and what it really cost. */
@@ -38,6 +41,24 @@ function DoneLine({ mark }: { mark: DoneMark }) {
         <span className="figures">{formatEuros(mark.costCents)}</span>
       </span>
       <span className="tl-sub">{mark.costCents === mark.plannedCents ? 'Cost as planned' : `Planned ${formatEuros(mark.plannedCents)}`}</span>
+    </span>
+  );
+}
+
+/** One of this paycheck's lines: ✓ and green once set aside, "€60 of €150" while filling. */
+function FilledLineRow({ line, name }: { line: FilledLine; name: string }) {
+  const isFull = line.plannedCents > 0 && line.filledCents >= line.plannedCents;
+  const isPart = line.filledCents > 0 && !isFull;
+  return (
+    <span className={isFull ? 'ledger-for-line is-filled' : 'ledger-for-line'}>
+      <span>
+        {isFull && <span aria-hidden="true">✓ </span>}
+        {name}
+        {isFull && <span className="sr-only"> (set aside)</span>}
+      </span>
+      <span className="figures">
+        {isPart ? `${formatEuros(line.filledCents)} of ${formatEuros(line.plannedCents)}` : formatEuros(line.plannedCents)}
+      </span>
     </span>
   );
 }
@@ -105,7 +126,7 @@ function GutterLabel({ month, isFirst }: { month: Month; isFirst: boolean }) {
  * names in the left margin where each month begins, and a band per paycheck
  * beside them. The band of the paycheck you're living on is green.
  */
-export function LedgerTimeline({ plan, envelopes, payday, currentStart, today, done, past = [] }: LedgerProps) {
+export function LedgerTimeline({ plan, envelopes, payday, currentStart, today, done, past = [], setAsideSoFarCents }: LedgerProps) {
   const id = useId();
   const [showPast, setShowPast] = useState(false);
   const nameOf = nameLookup(envelopes);
@@ -213,12 +234,16 @@ export function LedgerTimeline({ plan, envelopes, payday, currentStart, today, d
                   </span>
                   {dates !== null && <span className="tl-sub">Paycheck · {dates}</span>}
                   <span className="ledger-for">
-                    {Object.entries(event.byEnvelope).map(([id, cents]) => (
-                      <span key={id} className="ledger-for-line">
-                        <span>{nameOf(id)}</span>
-                        <span className="figures">{formatEuros(cents)}</span>
-                      </span>
-                    ))}
+                    {event.isCurrent && setAsideSoFarCents !== undefined
+                      ? fillByDeadline(event.byEnvelope, envelopes, setAsideSoFarCents).map((line) => (
+                          <FilledLineRow key={line.id} line={line} name={nameOf(line.id)} />
+                        ))
+                      : Object.entries(event.byEnvelope).map(([id, cents]) => (
+                          <span key={id} className="ledger-for-line">
+                            <span>{nameOf(id)}</span>
+                            <span className="figures">{formatEuros(cents)}</span>
+                          </span>
+                        ))}
                   </span>
                 </span>
               </span>

@@ -683,6 +683,13 @@ ol {
   color: var(--ink-soft);
 }
 
+/* This paycheck's lines you've already set aside. */
+.ledger-for-line.is-filled,
+.ledger-for-line.is-filled .figures {
+  color: var(--green);
+  font-weight: 500;
+}
+
 @keyframes row-in {
   from {
     opacity: 0;

@@ -407,7 +407,16 @@ export default function App() {
               {layout === 'columns' ? (
                 <LedgerColumns plan={shownPlan} envelopes={shownEnvelopes} payday={settings.payday} currentStart={period.startIsReal ? period.start : undefined} today={today} done={finished} past={past} />
               ) : (
-                <LedgerTimeline plan={shownPlan} envelopes={shownEnvelopes} payday={settings.payday} currentStart={period.startIsReal ? period.start : undefined} today={today} done={finished} past={past} />
+                <LedgerTimeline
+                  plan={shownPlan}
+                  envelopes={shownEnvelopes}
+                  payday={settings.payday}
+                  currentStart={period.startIsReal ? period.start : undefined}
+                  today={today}
+                  done={finished}
+                  past={past}
+                  setAsideSoFarCents={showingExample ? undefined : Math.max(0, status.movements.netCents)}
+                />
               )}
             </section>
           )}
