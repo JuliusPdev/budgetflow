@@ -231,6 +231,23 @@ ol {
   color: var(--dim);
 }
 
+/* Finished goals stay in the list for the record, but step back so open ones lead. */
+.goal--done .goal-name,
+.goal--done .goal-share {
+  color: var(--dim);
+  font-weight: 400;
+}
+
+.goal--done .goal-bar-fill {
+  background: var(--line);
+}
+
+.goal--done .done-tag,
+.expense-row--done .done-tag {
+  color: var(--dim);
+  background: var(--line-soft);
+}
+
 .goal--repaying .goal-detail {
   color: var(--terracotta);
 }
