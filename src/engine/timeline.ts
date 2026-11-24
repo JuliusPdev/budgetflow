@@ -96,7 +96,8 @@ function daysBetween(from: Day, to: Day): number {
   return Math.round((toTime(to) - toTime(from)) / 86_400_000);
 }
 
-const RANK = { 'month-start': 0, 'set-aside': 1, 'past-paycheck': 1, today: 2, bill: 3, done: 3, past: 3, 'paycheck-end': 4 } as const;
+// On the same day: Today heads the day, then money in, then money out.
+const RANK = { 'month-start': 0, today: 1, 'set-aside': 2, 'past-paycheck': 2, bill: 3, done: 3, past: 3, 'paycheck-end': 4 } as const;
 
 /**
  * Turns the plan (one entry per paycheck) into diary rows in date order, each

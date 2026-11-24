@@ -133,3 +133,14 @@ describe('payments in the timeline', () => {
     expect(rows.map(describeRow).filter((row) => row.includes('musical'))).toEqual(['done musical 2026-11-24 · band 2026-11']);
   });
 });
+
+describe('a day with several things on it', () => {
+  it('starts with Today, then money in, then money out', () => {
+    // Made-up: the paycheck arrived today, and an expense was finished today.
+    const NOW = '2026-11-24';
+    const finished: Envelope = { ...gifts, done: { date: NOW, costCents: 30_000 } };
+    const rows = buildTimeline(planSetAside([trip], '2026-11'), [finished, trip], PAYDAY, NOW, NOW, doneMarks([finished])).map(describeRow);
+    const sameDay = rows.filter((row) => row.includes(NOW));
+    expect(sameDay).toEqual(['today 2026-11-24 · band 2026-11', 'in 2026-11-24 · band 2026-11', 'done gifts 2026-11-24 · band 2026-11']);
+  });
+});

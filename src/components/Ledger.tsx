@@ -42,6 +42,27 @@ function DoneLine({ mark }: { mark: DoneMark }) {
   );
 }
 
+/** The day a row belongs to, so a day's date shows once; month lines have none. */
+function dayKey(event: TimelineRow['event']): string | null {
+  switch (event.kind) {
+    case 'month-start':
+      return null;
+    case 'bill':
+      return event.date ?? 'any day';
+    case 'done':
+      return event.mark.date;
+    case 'past':
+      return event.event.date;
+    default:
+      return event.date;
+  }
+}
+
+/** A row's date; under another row of the same day it's only read aloud. */
+function DateCell({ label, repeated }: { label: string; repeated: boolean }) {
+  return <span className="tl-date">{repeated ? <span className="sr-only">{label}</span> : label}</span>;
+}
+
 /** What a past event's line says: its title, the amount, and a note underneath. */
 function pastLine(event: PastEvent): { title: string; cents: string; sub: string | null; goesOut: boolean } {
   if (event.kind === 'payment') {
@@ -128,6 +149,8 @@ export function LedgerTimeline({ plan, envelopes, payday, currentStart, today, d
     <ol id={`${id}-timeline`} className="timeline">
       {rows.map(({ event }, index) => {
         const band = <span className={bandClass(index)} aria-hidden="true" />;
+        // Today heads its day; the rest of that day goes without the date.
+        const repeated = index > 0 && dayKey(event) !== null && dayKey(event) === dayKey(rows[index - 1].event);
 
         if (event.kind === 'month-start') {
           return (
@@ -150,7 +173,7 @@ export function LedgerTimeline({ plan, envelopes, payday, currentStart, today, d
               <span />
               {band}
               <span className="tl-content">
-                <span className="tl-date">{formatDayShort(event.date)}</span>
+                <DateCell label={formatDayShort(event.date)} repeated={repeated} />
                 <span className="tl-today-label">Today</span>
               </span>
             </li>
@@ -163,7 +186,7 @@ export function LedgerTimeline({ plan, envelopes, payday, currentStart, today, d
               <span />
               {band}
               <span className="tl-content">
-                <span className="tl-date">{formatDayShort(event.date)}</span>
+                <DateCell label={formatDayShort(event.date)} repeated={repeated} />
                 <span className="tl-sub">
                   Last day of this paycheck · {event.daysLeft === 1 ? '1 day' : `${event.daysLeft} days`} left
                 </span>
@@ -179,7 +202,7 @@ export function LedgerTimeline({ plan, envelopes, payday, currentStart, today, d
               <span />
               {band}
               <span className="tl-content">
-                <span className="tl-date">{formatDayShort(event.date)}</span>
+                <DateCell label={formatDayShort(event.date)} repeated={repeated} />
                 <span className="tl-body">
                   <span className="tl-head">
                     <span>
@@ -210,7 +233,7 @@ export function LedgerTimeline({ plan, envelopes, payday, currentStart, today, d
               <span />
               {band}
               <span className="tl-content">
-                <span className="tl-date">{formatDayShort(mark.date)}</span>
+                <DateCell label={formatDayShort(mark.date)} repeated={repeated} />
                 <DoneLine mark={mark} />
               </span>
             </li>
@@ -223,7 +246,7 @@ export function LedgerTimeline({ plan, envelopes, payday, currentStart, today, d
               <span />
               {band}
               <span className="tl-content">
-                <span className="tl-date">{formatDayShort(event.date)}</span>
+                <DateCell label={formatDayShort(event.date)} repeated={repeated} />
                 <span className="tl-body">
                   <span className="tl-head">
                     <span>{event.putAsideCents > 0 ? 'Put aside' : 'Nothing put aside'}</span>
@@ -246,7 +269,7 @@ export function LedgerTimeline({ plan, envelopes, payday, currentStart, today, d
                 <span />
                 {band}
                 <span className="tl-content">
-                  <span className="tl-date">{formatDayShort(happened.date)}</span>
+                  <DateCell label={formatDayShort(happened.date)} repeated={repeated} />
                   <DoneLine mark={happened.mark} />
                 </span>
               </li>
@@ -258,7 +281,7 @@ export function LedgerTimeline({ plan, envelopes, payday, currentStart, today, d
               <span />
               {band}
               <span className="tl-content">
-                <span className="tl-date">{formatDayShort(happened.date)}</span>
+                <DateCell label={formatDayShort(happened.date)} repeated={repeated} />
                 <span className="tl-body">
                   <span className="tl-head">
                     <span>{line.title}</span>
@@ -276,7 +299,7 @@ export function LedgerTimeline({ plan, envelopes, payday, currentStart, today, d
             <span />
             {band}
             <span className="tl-content">
-              <span className="tl-date">{event.date === undefined ? 'Any day' : formatDayShort(event.date)}</span>
+              <DateCell label={event.date === undefined ? 'Any day' : formatDayShort(event.date)} repeated={repeated} />
               <span className="tl-body">
                 <span className="tl-head">
                   <span>{event.isPaid ? `Paid · ${nameOf(event.envelopeId)}` : nameOf(event.envelopeId)}</span>
