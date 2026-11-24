@@ -238,11 +238,11 @@ ol {
   font-weight: 400;
 }
 
+/* Still clearly complete: a full green bar, a little softer than the open ones. */
 .goal--done .goal-bar-fill {
-  background: var(--line);
+  opacity: 0.6;
 }
 
-.goal--done .done-tag,
 .expense-row--done .done-tag {
   color: var(--dim);
   background: var(--line-soft);
