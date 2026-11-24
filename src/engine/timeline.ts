@@ -1,3 +1,4 @@
+import { daysBetween } from './months';
 import type { MonthPlan } from './plan';
 import { paycheckDates, paycheckMonthOf, paycheckRange } from './timing';
 import type { PastEvent } from './history';
@@ -17,6 +18,10 @@ export type TimelineEvent =
       amountCents: Cents;
       byEnvelope: Record<string, Cents>;
       isCurrent: boolean;
+      /** The current paycheck while the next one is late: it runs until today. Days late, 0 on the day. */
+      nextLateDays?: number;
+      /** The next paycheck while it's late: expected on this day, not here yet. */
+      expectedOn?: Day;
     }
   | {
       kind: 'bill';
@@ -90,12 +95,6 @@ interface Placed extends TimelineRow {
   rank: number;
 }
 
-/** Whole days from one day to a later one: 20 Nov → 29 Nov is 9. */
-function daysBetween(from: Day, to: Day): number {
-  const toTime = (day: Day) => Date.UTC(Number(day.slice(0, 4)), Number(day.slice(5, 7)) - 1, Number(day.slice(8, 10)));
-  return Math.round((toTime(to) - toTime(from)) / 86_400_000);
-}
-
 // On the same day: Today heads the day, then money in, then money out.
 const RANK = { 'month-start': 0, today: 1, 'set-aside': 2, 'past-paycheck': 2, bill: 3, done: 3, past: 3, 'paycheck-end': 4 } as const;
 
@@ -112,8 +111,11 @@ export function buildTimeline(
   today: Day,
   currentStart?: Day,
   done: DoneMark[] = [],
+  lateSince?: Day,
 ): TimelineRow[] {
   if (plan.length === 0) return [];
+  // Waiting for a paycheck that was expected by now: the current one runs on until it comes.
+  const isLate = lateSince !== undefined && today >= lateSince;
   const byId = new Map(envelopes.map((envelope) => [envelope.id, envelope]));
   const thisMonth = today.slice(0, 7);
   const firstPaycheck = plan[0].month;
@@ -124,6 +126,7 @@ export function buildTimeline(
 
   /** The band a day falls in, kept within the paychecks shown. */
   function bandOf(day: Day): Month {
+    if (isLate && day <= today) return firstPaycheck;
     const paycheck = paycheckMonthOf(day, payday);
     if (paycheck < firstPaycheck) return firstPaycheck;
     return paycheck > lastPaycheck ? lastPaycheck : paycheck;
@@ -135,7 +138,10 @@ export function buildTimeline(
 
   plan.forEach((monthPlan, index) => {
     const isCurrent = index === 0;
-    const date = isCurrent && currentStart !== undefined ? currentStart : paycheckDates(monthPlan.month, payday).last;
+    const planned = isCurrent && currentStart !== undefined ? currentStart : paycheckDates(monthPlan.month, payday).last;
+    // The late paycheck comes right after today: it's next, whenever it arrives.
+    const isLateNext = isLate && index === 1;
+    const date = isLateNext ? today : planned;
     place(date.slice(0, 7), date.slice(8, 10), {
       kind: 'set-aside',
       date,
@@ -143,6 +149,8 @@ export function buildTimeline(
       amountCents: monthPlan.totalCents,
       byEnvelope: monthPlan.byEnvelope,
       isCurrent,
+      ...(isCurrent && isLate ? { nextLateDays: daysBetween(lateSince, today) } : {}),
+      ...(isLateNext ? { expectedOn: planned } : {}),
     }, monthPlan.month);
 
     for (const [envelopeId, amountCents] of Object.entries(monthPlan.billsOut)) {

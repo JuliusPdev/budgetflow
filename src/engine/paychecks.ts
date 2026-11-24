@@ -1,4 +1,4 @@
-import { addMonths } from './months';
+import { addMonths, daysBetween } from './months';
 import { paycheckDates, paycheckMonthOf, paydayIn } from './timing';
 import type { Day, LogEntry, Month, PaycheckEntry } from './types';
 
@@ -18,12 +18,6 @@ export function paychecksIn(log: LogEntry[]): PaycheckEntry[] {
 /** The usual payday of a paycheck month, e.g. "2026-11" → "2026-11-21". */
 function expectedPayday(month: Month, payday: number): Day {
   return `${month}-${String(paydayIn(month, payday)).padStart(2, '0')}`;
-}
-
-/** Whole days from one day to another (negative when `to` is earlier). */
-function daysBetween(from: Day, to: Day): number {
-  const toUtc = (day: Day) => Date.UTC(Number(day.slice(0, 4)), Number(day.slice(5, 7)) - 1, Number(day.slice(8, 10)));
-  return Math.round((toUtc(to) - toUtc(from)) / 86_400_000);
 }
 
 /**
@@ -54,6 +48,11 @@ export interface CurrentPeriod {
   nextExpected: Day;
   /** The next paycheck was expected by now but isn't recorded yet: time for a reminder. */
   nextIsDue: boolean;
+  /**
+   * While you're waiting for a paycheck you record: days since it was expected
+   * (0 on the day itself). The current paycheck runs on until it comes. Null otherwise.
+   */
+  daysLate: number | null;
 }
 
 /** The paycheck you're in on `today`. */
@@ -62,9 +61,17 @@ export function currentPeriod(log: LogEntry[], today: Day, payday: number): Curr
   if (recorded.length === 0) {
     const month = paycheckMonthOf(today, payday);
     const { last, next } = paycheckDates(month, payday);
-    return { month, start: last, startIsReal: false, nextExpected: next, nextIsDue: false };
+    return { month, start: last, startIsReal: false, nextExpected: next, nextIsDue: false, daysLate: null };
   }
   const latest = recorded[recorded.length - 1];
   const nextExpected = expectedPayday(addMonths(latest.month, 1), payday);
-  return { month: latest.month, start: latest.date, startIsReal: true, nextExpected, nextIsDue: today >= nextExpected };
+  const nextIsDue = today >= nextExpected;
+  return {
+    month: latest.month,
+    start: latest.date,
+    startIsReal: true,
+    nextExpected,
+    nextIsDue,
+    daysLate: nextIsDue ? daysBetween(nextExpected, today) : null,
+  };
 }

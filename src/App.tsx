@@ -6,7 +6,7 @@ import { ExpenseList, NEW_EXPENSE } from './components/ExpenseList';
 import { LedgerColumns, LedgerTimeline } from './components/Ledger';
 import { SyncPanel } from './components/SyncPanel';
 import { ThisMonth } from './components/ThisMonth';
-import { dayOfDate, monthOfDate } from './engine/months';
+import { dayBefore, dayOfDate, monthOfDate } from './engine/months';
 import { buildColumns } from './engine/columns';
 import { previewExpense, type ExpensePreview } from './engine/expensePreview';
 import { buildFillUpView } from './engine/fillUp';
@@ -82,7 +82,12 @@ export default function App() {
   const currentPaycheck = period.month;
   const phase = { last: period.start, next: period.nextExpected };
   // From the last payday to the next one: the stretch you can still contribute to.
-  const paycheckLabel = hasPayday ? `${formatDayShort(phase.last)} – ${formatDayShort(phase.next)}` : undefined;
+  // Its last day is the day before the next payday; while that paycheck is late, it runs until today.
+  const paycheckLabel = hasPayday
+    ? `${formatDayShort(phase.last)} – ${period.daysLate === null ? formatDayShort(dayBefore(phase.next)) : 'today'}`
+    : undefined;
+  // When the next paycheck was expected, while you're waiting for it.
+  const lateSince = period.daysLate === null ? undefined : period.nextExpected;
   const periodName = hasPayday ? 'this paycheck' : formatMonthLong(currentPaycheck).split(' ')[0];
   const { account, linkError, sendLink, signOut } = useAccount();
   const sync = useSync({ account, data, isLoading, replaceAll });
@@ -405,7 +410,7 @@ export default function App() {
                 </p>
               )}
               {layout === 'columns' ? (
-                <LedgerColumns plan={shownPlan} envelopes={shownEnvelopes} payday={settings.payday} currentStart={period.startIsReal ? period.start : undefined} today={today} done={finished} past={past} />
+                <LedgerColumns plan={shownPlan} envelopes={shownEnvelopes} payday={settings.payday} currentStart={period.startIsReal ? period.start : undefined} today={today} done={finished} past={past} lateSince={lateSince} />
               ) : (
                 <LedgerTimeline
                   plan={shownPlan}
@@ -416,6 +421,7 @@ export default function App() {
                   done={finished}
                   past={past}
                   setAsideSoFarCents={showingExample ? undefined : Math.max(0, status.movements.netCents)}
+                  lateSince={lateSince}
                 />
               )}
             </section>

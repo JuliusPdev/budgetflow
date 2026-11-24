@@ -144,3 +144,23 @@ describe('a day with several things on it', () => {
     expect(sameDay).toEqual(['today 2026-11-24 · band 2026-11', 'in 2026-11-24 · band 2026-11', 'done gifts 2026-11-24 · band 2026-11']);
   });
 });
+
+describe('a late paycheck', () => {
+  // Made-up: the October paycheck came on 21 Oct; November's was expected on 21 Nov and isn't here on 23 Nov.
+  const NOW = '2026-11-23';
+  const rows = buildTimeline(plan, envelopes, PAYDAY, NOW, '2026-10-21', [], '2026-11-21');
+
+  it('keeps the current paycheck running until today, and says how late the next one is', () => {
+    const current = rows.find(({ event }) => event.kind === 'set-aside' && event.isCurrent)?.event;
+    expect(current?.kind === 'set-aside' && current.nextLateDays).toBe(2);
+    expect(rows.some(({ event }) => event.kind === 'paycheck-end')).toBe(false);
+  });
+
+  it('puts the next paycheck right after today, as expected but not here yet', () => {
+    const described = rows.map(describeRow);
+    const todayAt = described.indexOf('today 2026-11-23 · band 2026-10');
+    expect(described[todayAt + 1]).toBe('in 2026-11-23 · band 2026-11');
+    const next = rows[todayAt + 1].event;
+    expect(next.kind === 'set-aside' && next.expectedOn).toBe('2026-11-21');
+  });
+});

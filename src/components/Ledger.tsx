@@ -28,6 +28,14 @@ interface LedgerProps {
   past?: PastPaycheck[];
   /** What you've set aside this paycheck so far: fills its lines, closest deadline first. */
   setAsideSoFarCents?: Cents;
+  /** When the next paycheck was expected, while you're waiting for it: the current one runs until today. */
+  lateSince?: Day;
+}
+
+/** "next one due today" / "next one 1 day late" / "next one 3 days late". */
+function lateText(days: number): string {
+  if (days === 0) return 'next one due today';
+  return `next one ${days === 1 ? '1 day' : `${days} days`} late`;
 }
 
 /** A finished expense: ✓, its name, and what it really cost. */
@@ -72,6 +80,8 @@ function dayKey(event: TimelineRow['event']): string | null {
       return event.date ?? 'any day';
     case 'done':
       return event.mark.date;
+    case 'set-aside':
+      return event.expectedOn === undefined ? event.date : 'soon';
     case 'past':
       return event.event.date;
     default:
@@ -126,11 +136,11 @@ function GutterLabel({ month, isFirst }: { month: Month; isFirst: boolean }) {
  * names in the left margin where each month begins, and a band per paycheck
  * beside them. The band of the paycheck you're living on is green.
  */
-export function LedgerTimeline({ plan, envelopes, payday, currentStart, today, done, past = [], setAsideSoFarCents }: LedgerProps) {
+export function LedgerTimeline({ plan, envelopes, payday, currentStart, today, done, past = [], setAsideSoFarCents, lateSince }: LedgerProps) {
   const id = useId();
   const [showPast, setShowPast] = useState(false);
   const nameOf = nameLookup(envelopes);
-  const currentRows = buildTimeline(plan, envelopes, payday, today, currentStart, done);
+  const currentRows = buildTimeline(plan, envelopes, payday, today, currentStart, done, lateSince);
   const pastRows = showPast ? pastTimelineRows(past) : [];
   // When the past ends in the month the current paycheck starts in, that month is named once.
   const lastPastMonth = [...pastRows].reverse().find((row) => row.event.kind === 'month-start')?.event;
@@ -218,12 +228,21 @@ export function LedgerTimeline({ plan, envelopes, payday, currentStart, today, d
 
         if (event.kind === 'set-aside') {
           const dates = formatPeriod(event.paycheck, payday, event.isCurrent ? currentStart : undefined);
+          // While the next paycheck is late: the current one runs until today, the next one is "soon".
+          const sub =
+            event.expectedOn !== undefined
+              ? `Expected ${formatDayShort(event.expectedOn)} · not here yet`
+              : event.nextLateDays !== undefined && currentStart !== undefined
+                ? `Paycheck · ${formatDayShort(currentStart)} – today · ${lateText(event.nextLateDays)}`
+                : dates === null
+                  ? null
+                  : `Paycheck · ${dates}`;
           return (
             <li key={`in-${event.paycheck}`} className="tl-row tl-in">
               <span />
               {band}
               <span className="tl-content">
-                <DateCell label={formatDayShort(event.date)} repeated={repeated} />
+                <DateCell label={event.expectedOn !== undefined ? 'Soon' : formatDayShort(event.date)} repeated={repeated} />
                 <span className="tl-body">
                   <span className="tl-head">
                     <span>
@@ -232,7 +251,7 @@ export function LedgerTimeline({ plan, envelopes, payday, currentStart, today, d
                     </span>
                     <span className="figures">{formatEuros(event.amountCents)}</span>
                   </span>
-                  {dates !== null && <span className="tl-sub">Paycheck · {dates}</span>}
+                  {sub !== null && <span className="tl-sub">{sub}</span>}
                   <span className="ledger-for">
                     {event.isCurrent && setAsideSoFarCents !== undefined
                       ? fillByDeadline(event.byEnvelope, envelopes, setAsideSoFarCents).map((line) => (
@@ -355,7 +374,7 @@ function percent(at: number): string {
  * Money is put aside at its left edge (payday); dashed lines show where a month
  * begins; bills sit on their real day in the "Going out" row.
  */
-export function LedgerColumns({ plan, envelopes, payday, currentStart, today, done, past = [] }: LedgerProps) {
+export function LedgerColumns({ plan, envelopes, payday, currentStart, today, done, past = [], lateSince }: LedgerProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const nowRef = useRef<HTMLElement>(null);
   // Opens at "Now": the earlier paychecks wait to the left, a scroll away.
@@ -413,7 +432,11 @@ export function LedgerColumns({ plan, envelopes, payday, currentStart, today, do
         ))}
 
         {layout.bricks.map((brick, index) => {
-          const dates = formatPeriod(brick.paycheck, payday, brick.isCurrent ? currentStart : undefined);
+          // While the next paycheck is late, the current one runs until today.
+          const runsToToday = brick.isCurrent && currentStart !== undefined && lateSince !== undefined && today >= lateSince;
+          const dates = runsToToday
+            ? `${formatDayShort(currentStart)} – today`
+            : formatPeriod(brick.paycheck, payday, brick.isCurrent ? currentStart : undefined);
           const lines = layout.monthLines.filter((line) => line.brick === index);
           // Each bill's stretch inside this brick: a dot for one day, a bar for "any day".
           const bills = layout.bills.flatMap((bill) => {

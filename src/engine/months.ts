@@ -27,6 +27,21 @@ export function dayOfDate(date: Date): Day {
   return `${date.getFullYear()}-${month}-${day}`;
 }
 
+/** A day as a count of days, so days can be subtracted. */
+function dayTime(day: Day): number {
+  return Date.UTC(Number(day.slice(0, 4)), Number(day.slice(5, 7)) - 1, Number(day.slice(8, 10)));
+}
+
+/** "2026-11-01" → "2026-10-31". */
+export function dayBefore(day: Day): Day {
+  return new Date(dayTime(day) - 86_400_000).toISOString().slice(0, 10);
+}
+
+/** Whole days from one day to another: 20 Nov → 29 Nov is 9 (negative when `to` is earlier). */
+export function daysBetween(from: Day, to: Day): number {
+  return Math.round((dayTime(to) - dayTime(from)) / 86_400_000);
+}
+
 /** The month `count` months after `month` ("2026-11" + 3 → "2027-02"). */
 export function addMonths(month: Month, count: number): Month {
   return fromIndex(toIndex(month) + count);

@@ -1,4 +1,4 @@
-import { addMonths } from './months';
+import { addMonths, dayBefore } from './months';
 import { paychecksIn } from './paychecks';
 import type { DoneMark, TimelineRow } from './timeline';
 import { paycheckDates, paycheckMonthOf } from './timing';
@@ -28,12 +28,6 @@ export interface PastPaycheck {
   putAsideCents: Cents;
   /** In date order. */
   events: PastEvent[];
-}
-
-/** "2026-11-01" → "2026-10-31". */
-function dayBefore(day: Day): Day {
-  const time = Date.UTC(Number(day.slice(0, 4)), Number(day.slice(5, 7)) - 1, Number(day.slice(8, 10)));
-  return new Date(time - 86_400_000).toISOString().slice(0, 10);
 }
 
 /**

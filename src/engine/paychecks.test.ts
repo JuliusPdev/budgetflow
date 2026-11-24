@@ -31,6 +31,7 @@ describe('the current paycheck', () => {
       startIsReal: false,
       nextExpected: '2026-11-21',
       nextIsDue: false,
+      daysLate: null,
     });
   });
 
@@ -43,16 +44,19 @@ describe('the current paycheck', () => {
 
   it('waits for the next paycheck instead of switching on the usual payday, and asks', () => {
     const log = [paycheck('2026-11', '2026-11-19')];
-    expect(currentPeriod(log, '2026-12-20', PAYDAY)).toMatchObject({ month: '2026-11', nextIsDue: false });
+    expect(currentPeriod(log, '2026-12-20', PAYDAY)).toMatchObject({ month: '2026-11', nextIsDue: false, daysLate: null });
+    // Expected today: not late yet, but the wait has begun.
+    expect(currentPeriod(log, '2026-12-21', PAYDAY)).toMatchObject({ month: '2026-11', daysLate: 0 });
     expect(currentPeriod(log, '2026-12-23', PAYDAY)).toMatchObject({
       month: '2026-11',
       nextExpected: '2026-12-21',
       nextIsDue: true,
+      daysLate: 2,
     });
   });
 
   it('moves on once the late paycheck is recorded', () => {
     const log = [paycheck('2026-11', '2026-11-19'), paycheck('2026-12', '2026-12-23')];
-    expect(currentPeriod(log, '2026-12-23', PAYDAY)).toMatchObject({ month: '2026-12', start: '2026-12-23', nextIsDue: false });
+    expect(currentPeriod(log, '2026-12-23', PAYDAY)).toMatchObject({ month: '2026-12', start: '2026-12-23', nextIsDue: false, daysLate: null });
   });
 });
