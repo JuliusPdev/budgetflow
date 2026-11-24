@@ -630,6 +630,11 @@ ol {
   color: var(--terracotta);
 }
 
+/* Money going out on a row that isn't red as a whole, like a finished expense. */
+.tl-amount-out {
+  color: var(--terracotta);
+}
+
 .tl-today .tl-content {
   align-items: center;
   color: var(--green);

@@ -46,7 +46,8 @@ function DoneLine({ mark }: { mark: DoneMark }) {
         <span>
           <span className="done-tag">✓ Done</span> {mark.name}
         </span>
-        <span className="figures">{formatEuros(mark.costCents)}</span>
+        {/* What it cost left your money: red with a minus, like every other row where money goes out. */}
+        <span className="figures tl-amount-out">−{formatEuros(mark.costCents)}</span>
       </span>
       <span className="tl-sub">{mark.costCents === mark.plannedCents ? 'Cost as planned' : `Planned ${formatEuros(mark.plannedCents)}`}</span>
     </span>
