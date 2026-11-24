@@ -36,7 +36,9 @@ export function PotPanel({
   children,
 }: PotPanelProps) {
   const id = useId();
-  const forExpensesCents = Object.values(potShares.shares).reduce((sum, cents) => sum + cents, 0);
+  // What's really in the pot for expenses. Not the shares added up: an expense paid
+  // before its due month keeps a share of money that has already left the pot.
+  const forExpensesCents = Math.max(0, potCents - potShares.extraCents);
 
   return (
     <section className="pot" aria-labelledby={`${id}-title`}>
