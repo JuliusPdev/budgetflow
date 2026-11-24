@@ -167,7 +167,7 @@ describe('unreadable synced copies', () => {
   });
 
   it('never calls a copy from a newer BudgetFlow damaged', async () => {
-    const { vaultKey, record } = await serverHolding('{"version":9,"somethingNew":[]}');
+    const { vaultKey, record } = await serverHolding('{"version":10,"somethingNew":[]}');
     expect(await decideStart(record, vaultKey, budget(trip), null)).toEqual({ kind: 'newer-app' });
   });
 

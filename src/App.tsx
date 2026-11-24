@@ -24,7 +24,7 @@ import { PaycheckButton } from './components/PaycheckButton';
 import { DoneDialog } from './components/DoneDialog';
 import { OverdueNotes } from './components/OverdueNotes';
 import { PayDialog, type PayDetails } from './components/PayDialog';
-import type { Expense, ExpenseFields, LogEntry } from './engine/types';
+import type { ClosedPaycheck, Expense, ExpenseFields, LogEntry } from './engine/types';
 import { PotPanel } from './components/PotPanel';
 import { TakeOut } from './components/TakeOut';
 import { previewTakeOut } from './engine/takeOut';
@@ -310,6 +310,21 @@ export default function App() {
       : null;
   }
   /** A paycheck by its payday, "21 Dec"; plain months without a payday. */
+  /**
+   * The paycheck that's ending, as it's split right now: saved with the next
+   * paycheck so its history keeps showing what it was for.
+   */
+  function closingSplit(): { closes?: ClosedPaycheck } {
+    const current = shownPlan[0];
+    if (current === undefined || current.month !== currentPaycheck) return {};
+    const lines = Object.entries(current.byEnvelope).map(([id, cents]) => ({
+      id,
+      name: savedEnvelopes.find((expense) => expense.id === id)?.name ?? id,
+      cents,
+    }));
+    return { closes: { paycheck: current.month, totalCents: current.totalCents, lines } };
+  }
+
   function nameOfPaycheck(month: string): string {
     return hasPayday ? formatDayShort(paycheckDates(month, settings.payday).last) : formatMonthShort(month);
   }
@@ -364,7 +379,7 @@ export default function App() {
                     log={log}
                     payday={settings.payday}
                     today={today}
-                    onLog={logPaycheck}
+                    onLog={(details) => logPaycheck({ ...details, ...closingSplit() })}
                     onUndo={deleteLogEntry}
                   />
                 )}

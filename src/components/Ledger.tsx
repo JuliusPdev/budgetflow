@@ -300,7 +300,18 @@ export function LedgerTimeline({ plan, envelopes, payday, currentStart, today, d
                   </span>
                   <span className="tl-sub">
                     Paycheck · {formatDayShort(event.date)} – {formatDayShort(event.last)}
+                    {event.split !== undefined && ` · planned ${formatEuros(event.split.totalCents)}`}
                   </span>
+                  {event.split !== undefined && (
+                    <span className="ledger-for">
+                      {event.split.lines.map((line) => (
+                        <span key={line.id} className="ledger-for-line">
+                          <span>{line.name}</span>
+                          <span className="figures">{formatEuros(line.cents)}</span>
+                        </span>
+                      ))}
+                    </span>
+                  )}
                 </span>
               </span>
             </li>

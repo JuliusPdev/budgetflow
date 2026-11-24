@@ -100,7 +100,8 @@ export function isLogEntry(value: unknown): value is LogEntry {
     return (
       isDay(candidate.date) &&
       isMonth(candidate.month) &&
-      (candidate.amountCents === undefined || isWholeCents(candidate.amountCents))
+      (candidate.amountCents === undefined || isWholeCents(candidate.amountCents)) &&
+      (candidate.closes === undefined || isClosedPaycheck(candidate.closes))
     );
   }
   if (candidate.kind === 'adjustment') {
@@ -210,13 +211,13 @@ function parseAnyVersion(raw: string): BudgetData | null {
     const data = parsed as Record<string, unknown>;
     if (!Array.isArray(data.envelopes)) return null;
 
-    // Versions 5 to 8 only added kinds of log entry and done stamps, so all read the same way.
+    // Versions 5 to 9 only added kinds of log entry, done stamps and saved splits, so all read the same way.
     // The ticks of versions 4–6 are kept here and turned into payments above.
-    if (data.version === 4 || data.version === 5 || data.version === 6 || data.version === 7 || data.version === 8) {
+    if (data.version === 4 || data.version === 5 || data.version === 6 || data.version === 7 || data.version === 8 || data.version === 9) {
       if (!data.envelopes.every(isExpense)) return null;
       if (!Array.isArray(data.log) || !data.log.every(isLogEntry) || !isSettings(data.settings)) return null;
       const envelopes = data.envelopes.map((expense) =>
-        data.version === 7 || data.version === 8 ? onlyExpenseFields(expense) : { ...onlyExpenseFields(expense), paidMonth: expense.paidMonth },
+        data.version === 7 || data.version === 8 || data.version === 9 ? onlyExpenseFields(expense) : { ...onlyExpenseFields(expense), paidMonth: expense.paidMonth },
       );
       return { envelopes, log: data.log, settings: data.settings };
     }
@@ -236,6 +237,22 @@ function parseAnyVersion(raw: string): BudgetData | null {
  * Drops anything an expense shouldn't carry, so stray fields can't sneak back
  * in. Paid parts are only ever calculated, never stored.
  */
+/** A paycheck's saved split: whole cents, a name for every line. */
+function isClosedPaycheck(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null) return false;
+  const closed = value as Record<string, unknown>;
+  return (
+    isMonth(closed.paycheck) &&
+    isWholeCents(closed.totalCents) &&
+    Array.isArray(closed.lines) &&
+    closed.lines.every((line: unknown) => {
+      if (typeof line !== 'object' || line === null) return false;
+      const { id, name, cents } = line as Record<string, unknown>;
+      return typeof id === 'string' && typeof name === 'string' && isWholeCents(cents);
+    })
+  );
+}
+
 function onlyExpenseFields(expense: Expense): Expense {
   const { id, name, targetCents, dueMonth, dueDate, done } = expense;
   return done === undefined ? { id, name, targetCents, dueMonth, dueDate } : { id, name, targetCents, dueMonth, dueDate, done };
@@ -243,7 +260,7 @@ function onlyExpenseFields(expense: Expense): Expense {
 
 /** Always writes the newest version. */
 function toSavedData(data: BudgetData): SavedData {
-  return { version: 8, envelopes: data.envelopes, log: data.log, settings: data.settings };
+  return { version: 9, envelopes: data.envelopes, log: data.log, settings: data.settings };
 }
 
 /**

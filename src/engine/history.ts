@@ -2,7 +2,7 @@ import { addMonths, dayBefore } from './months';
 import { paychecksIn } from './paychecks';
 import type { DoneMark, TimelineRow } from './timeline';
 import { paycheckDates, paycheckMonthOf } from './timing';
-import type { Cents, Day, Expense, LogEntry, Month } from './types';
+import type { Cents, ClosedPaycheck, Day, Expense, LogEntry, Month } from './types';
 
 // Looking back: the paychecks before the one you're living on, as they really
 // happened. The plan of back then was never saved, and it doesn't matter now:
@@ -26,6 +26,8 @@ export interface PastPaycheck {
   last: Day;
   /** Everything you put aside in it. */
   putAsideCents: Cents;
+  /** What it was for, as split when it ended; missing for paychecks that ended before splits were saved. */
+  split?: ClosedPaycheck;
   /** In date order. */
   events: PastEvent[];
 }
@@ -52,10 +54,15 @@ export function buildHistory(
   const firstDay = [...dated.map((entry) => entry.date ?? ''), ...doneBefore.map((expense) => expense.done?.date ?? '')].sort()[0];
   if (firstDay === undefined) return [];
 
+  // Each paycheck's split, saved with the paycheck that followed it.
+  const splits = new Map(
+    paychecksIn(log).flatMap((paycheck) => (paycheck.closes === undefined ? [] : [[paycheck.closes.paycheck, paycheck.closes] as const])),
+  );
   const past: PastPaycheck[] = [];
   for (let month = paycheckMonthOf(firstDay, payday); month < currentPaycheck; month = addMonths(month, 1)) {
     const next = startOf(addMonths(month, 1));
-    past.push({ paycheck: month, from: startOf(month), next, last: dayBefore(next), putAsideCents: 0, events: [] });
+    const split = splits.get(month);
+    past.push({ paycheck: month, from: startOf(month), next, last: dayBefore(next), putAsideCents: 0, events: [], ...(split === undefined ? {} : { split }) });
   }
   if (past.length === 0) return [];
 
@@ -120,7 +127,14 @@ export function pastTimelineRows(past: PastPaycheck[]): TimelineRow[] {
   for (const paycheck of past) {
     monthLine(paycheck.from);
     rows.push({
-      event: { kind: 'past-paycheck', date: paycheck.from, last: paycheck.last, paycheck: paycheck.paycheck, putAsideCents: paycheck.putAsideCents },
+      event: {
+        kind: 'past-paycheck',
+        date: paycheck.from,
+        last: paycheck.last,
+        paycheck: paycheck.paycheck,
+        putAsideCents: paycheck.putAsideCents,
+        ...(paycheck.split === undefined ? {} : { split: paycheck.split }),
+      },
       band: paycheck.paycheck,
     });
     for (const event of paycheck.events) {

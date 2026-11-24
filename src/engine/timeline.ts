@@ -2,7 +2,7 @@ import { daysBetween } from './months';
 import type { MonthPlan } from './plan';
 import { paycheckDates, paycheckMonthOf, paycheckRange } from './timing';
 import type { PastEvent } from './history';
-import type { Cents, Day, Expense, Month } from './types';
+import type { Cents, ClosedPaycheck, Day, Expense, Month } from './types';
 
 // The plan as a diary: every set-aside and every bill on its real day, in date
 // order. Months only mark where they begin; paychecks are bands alongside,
@@ -35,7 +35,7 @@ export type TimelineEvent =
   /** An expense you finished, on the day you finished it; its payments are part of it. */
   | { kind: 'done'; mark: DoneMark }
   /** Looking back: where a past paycheck began, with what you really put aside in it. */
-  | { kind: 'past-paycheck'; date: Day; last: Day; paycheck: Month; putAsideCents: Cents }
+  | { kind: 'past-paycheck'; date: Day; last: Day; paycheck: Month; putAsideCents: Cents; split?: ClosedPaycheck }
   /** Looking back: something that really happened. */
   | { kind: 'past'; event: PastEvent }
   | { kind: 'today'; date: Day }

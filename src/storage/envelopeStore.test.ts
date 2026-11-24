@@ -57,7 +57,7 @@ describe('envelope store', () => {
   it('always saves the newest version', async () => {
     const drawer = fakeDrawer();
     await createLocalStore(drawer).save({ envelopes: [trip], log: [], settings: { payday: 1 } });
-    expect(JSON.parse(drawer.contents.get(STORAGE_KEY) ?? '{}').version).toBe(8);
+    expect(JSON.parse(drawer.contents.get(STORAGE_KEY) ?? '{}').version).toBe(9);
   });
 
   it('backs up unreadable data instead of crashing or losing it', async () => {
@@ -80,11 +80,20 @@ describe('envelope store', () => {
       { version: 8, envelopes: [{ ...trip, done: { date: '21 Nov', costCents: 100 } }], log: [], settings: { payday: 1 } },
       { version: 8, envelopes: [trip], log: [{ ...payment, fromSpendingCents: -1 }], settings: { payday: 1 } },
       { version: 8, envelopes: [{ ...trip, done: { date: '2026-11-21', costCents: -1 } }], log: [], settings: { payday: 1 } },
+      { version: 9, envelopes: [trip], log: [{ ...paycheck, closes: { paycheck: '2026-10', totalCents: 100, lines: [{ id: 'trip', cents: 100 }] } }], settings: { payday: 1 } },
     ];
     for (const data of bad) {
       const drawer = fakeDrawer({ [STORAGE_KEY]: JSON.stringify(data) });
       expect(await createLocalStore(drawer).load()).toEqual(EMPTY);
     }
+  });
+
+  it("keeps a paycheck's saved split", async () => {
+    const closes = { paycheck: '2026-10', totalCents: 38_000, lines: [{ id: 'trip', name: 'Made-up trip', cents: 38_000 }] };
+    const data: BudgetData = { envelopes: [trip], log: [{ ...paycheck, closes }], settings: { payday: 1 } };
+    const drawer = fakeDrawer();
+    await createLocalStore(drawer).save(data);
+    expect(await createLocalStore(drawer).load()).toEqual(data);
   });
 
   it('ignores data saved by the old app', async () => {

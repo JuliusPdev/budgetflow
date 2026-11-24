@@ -111,6 +111,18 @@ export interface PaycheckEntry {
   month: Month;
   /** How much it was, if you entered it. Kept for later; not used in any calculation yet. */
   amountCents?: Cents;
+  /** The paycheck this one ended, as it was split: kept so its history shows what it was for. */
+  closes?: ClosedPaycheck;
+}
+
+/** A paycheck's split, saved when the next one arrives. Names are kept in case an expense is renamed or deleted. */
+export interface ClosedPaycheck {
+  /** The paycheck key: the month of its payday. */
+  paycheck: Month;
+  /** What the plan asked for it in total. */
+  totalCents: Cents;
+  /** What it asked for each expense, in the plan's order. */
+  lines: { id: string; name: string; cents: Cents }[];
 }
 
 /**
@@ -181,5 +193,5 @@ export interface BudgetData {
  *   8 — plus done expenses: finished, with what they really cost
  */
 export interface SavedData extends BudgetData {
-  version: 8;
+  version: 9;
 }

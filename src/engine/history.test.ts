@@ -15,6 +15,15 @@ const log: LogEntry[] = [
   { id: 's3', kind: 'set-aside', date: '2026-11-01', month: '2026-11', amountCents: 32_500 },
 ];
 
+describe('a paycheck split saved when the next one came', () => {
+  it('shows with the paycheck it belongs to', () => {
+    const closes = { paycheck: '2026-10', totalCents: 31_000, lines: [{ id: 'trip', name: 'Trip', cents: 31_000 }] };
+    const withSplit: LogEntry[] = [...log, { id: 'pay', kind: 'paycheck', date: '2026-11-01', month: '2026-11', closes }];
+    const past = buildHistory(withSplit, [gifts, trip], 1, '2026-11', '2026-11-01');
+    expect(past.map((paycheck) => paycheck.split?.totalCents)).toEqual([undefined, 31_000]);
+  });
+});
+
 describe('looking back', () => {
   const past = buildHistory(log, [gifts, trip], 1, '2026-11', '2026-11-01');
 
