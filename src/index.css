@@ -248,6 +248,61 @@ ol {
   background: var(--line-soft);
 }
 
+/* Finished goals fold into one quiet line; open it to see what they were. */
+.goals-done {
+  margin-top: var(--space-4);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--line-soft);
+}
+
+.goals-done summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 44px;
+  font-size: 0.875rem;
+  color: var(--dim);
+  cursor: pointer;
+  list-style: none;
+}
+
+.goals-done summary::-webkit-details-marker {
+  display: none;
+}
+
+/* A small drawn chevron: points right when closed, down when open. */
+.goals-done summary > span:first-child::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin: 0 var(--space-2) 2px 2px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 150ms ease;
+}
+
+.goals-done[open] summary > span:first-child::before {
+  transform: rotate(45deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .goals-done summary > span:first-child::before {
+    transition: none;
+  }
+}
+
+.goals-done summary:hover {
+  color: var(--ink-soft);
+}
+
+.goals-done summary:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 2px;
+}
+
 .goal--repaying .goal-detail {
   color: var(--terracotta);
 }

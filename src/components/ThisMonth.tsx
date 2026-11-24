@@ -73,8 +73,26 @@ export function ThisMonth({
     if (existing !== undefined) existing.shareCents += shareCents;
     else goals.push({ owner, envelope, shareCents });
   }
-  // Finished ones keep their line until this paycheck ends, at the bottom like in your expense list.
-  goals.sort((a, b) => Number(a.envelope.done !== undefined) - Number(b.envelope.done !== undefined));
+  // Finished ones still count toward this paycheck, but fold away so the open ones lead.
+  const openGoals = goals.filter((goal) => goal.envelope.done === undefined);
+  const doneGoals = goals.filter((goal) => goal.envelope.done !== undefined);
+  const doneShareCents = doneGoals.reduce((sum, goal) => sum + goal.shareCents, 0);
+
+  function renderGoal({ owner, envelope, shareCents }: (typeof goals)[number]) {
+    // The part still to pay carries the expense's own id; without one, it's all paid.
+    const stillToPay = envelopes.find((candidate) => candidate.id === owner);
+    const paidCents = progress[owner]?.paidCents ?? 0;
+    return (
+      <GoalLine
+        key={owner}
+        envelope={envelope}
+        shareCents={shareCents}
+        targetCents={paidCents + (stillToPay?.targetCents ?? 0)}
+        paidCents={paidCents}
+        coveredCents={progress[owner]?.coveredCents ?? envelope.savedCents}
+      />
+    );
+  }
 
   return (
     <section
@@ -121,23 +139,16 @@ export function ThisMonth({
             expenses fill together again.
           </p>
         )}
-        <ul className="goals">
-          {goals.map(({ owner, envelope, shareCents }) => {
-            // The part still to pay carries the expense's own id; without one, it's all paid.
-            const stillToPay = envelopes.find((candidate) => candidate.id === owner);
-            const paidCents = progress[owner]?.paidCents ?? 0;
-            return (
-              <GoalLine
-                key={owner}
-                envelope={envelope}
-                shareCents={shareCents}
-                targetCents={paidCents + (stillToPay?.targetCents ?? 0)}
-                paidCents={paidCents}
-                coveredCents={progress[owner]?.coveredCents ?? envelope.savedCents}
-              />
-            );
-          })}
-        </ul>
+        {openGoals.length > 0 && <ul className="goals">{openGoals.map(renderGoal)}</ul>}
+        {doneGoals.length > 0 && (
+          <details className="goals-done">
+            <summary>
+              <span>Done this {paycheckLabel === undefined ? 'month' : 'paycheck'} · {doneGoals.length}</span>
+              <span className="figures">{formatEuros(doneShareCents)}</span>
+            </summary>
+            <ul className="goals">{doneGoals.map(renderGoal)}</ul>
+          </details>
+        )}
         {addButton}
       </div>
     </section>
