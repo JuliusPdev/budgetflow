@@ -38,16 +38,17 @@ function lateText(days: number): string {
   return `next one ${days === 1 ? '1 day' : `${days} days`} late`;
 }
 
-/** A finished expense: ✓, its name, and what it really cost. */
+/** A finished expense: its name and what it really cost, red like any money going out. */
 function DoneLine({ mark }: { mark: DoneMark }) {
   return (
     <span className="tl-body">
-      <span className="tl-head">
+      {/* What it cost left your money; "Cost as planned" below already says it's finished. */}
+      <span className="tl-head tl-amount-out">
         <span>
-          <span className="done-tag">✓ Done</span> {mark.name}
+          {mark.name}
+          <span className="sr-only"> (done)</span>
         </span>
-        {/* What it cost left your money: red with a minus, like every other row where money goes out. */}
-        <span className="figures tl-amount-out">−{formatEuros(mark.costCents)}</span>
+        <span className="figures">−{formatEuros(mark.costCents)}</span>
       </span>
       <span className="tl-sub">{mark.costCents === mark.plannedCents ? 'Cost as planned' : `Planned ${formatEuros(mark.plannedCents)}`}</span>
     </span>

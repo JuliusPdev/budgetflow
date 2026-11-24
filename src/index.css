@@ -685,7 +685,7 @@ ol {
   color: var(--terracotta);
 }
 
-/* Money going out on a row that isn't red as a whole, like a finished expense. */
+/* Money going out on a row that isn't a bill: a finished expense. */
 .tl-amount-out {
   color: var(--terracotta);
 }
