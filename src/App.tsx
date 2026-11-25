@@ -25,6 +25,7 @@ import { DoneDialog } from './components/DoneDialog';
 import { OverdueNotes } from './components/OverdueNotes';
 import { PayDialog, type PayDetails } from './components/PayDialog';
 import type { ClosedPaycheck, Expense, ExpenseFields, LogEntry } from './engine/types';
+import { PotBox } from './components/PotBox';
 import { PotPanel } from './components/PotPanel';
 import { TakeOut } from './components/TakeOut';
 import { previewTakeOut } from './engine/takeOut';
@@ -194,9 +195,9 @@ export default function App() {
   // Not for example data: the list shows only your own expenses.
   const fillUpView = useMemo(() => {
     if (showingExample) return null;
-    const layout = buildColumns(shownPlan, shownEnvelopes, settings.payday, today, period.startIsReal ? period.start : undefined);
+    const layout = buildColumns(shownPlan, shownEnvelopes, settings.payday, today, period.startIsReal ? period.start : undefined, finished);
     return layout === null ? null : buildFillUpView(layout, shownEnvelopes);
-  }, [showingExample, shownPlan, shownEnvelopes, settings.payday, today, period.startIsReal, period.start]);
+  }, [showingExample, shownPlan, shownEnvelopes, settings.payday, today, period.startIsReal, period.start, finished]);
 
   // The timeline reads well on every screen, so it's the default; columns are a choice.
   const [layout, setLayout] = useState<Layout>('timeline');
@@ -329,6 +330,47 @@ export default function App() {
     return hasPayday ? formatDayShort(paycheckDates(month, settings.payday).last) : formatMonthShort(month);
   }
 
+  /**
+   * Your expenses, once: in Columns they become the lanes inside What's coming
+   * (each paycheck on top, Pay/Done/Edit on every lane); otherwise the list below.
+   */
+  function expenseList(inLanes: boolean) {
+    return (
+      <ExpenseList
+        envelopes={savedEnvelopes}
+        sharesById={shownShares}
+        progress={progress}
+        onPay={(id) => {
+          setPayingFor(id);
+          setLastAction(null);
+        }}
+        onDone={(id) => {
+          setFinishingFor(id);
+          setLastAction(null);
+        }}
+        onReopen={(id) => {
+          reopen(id);
+          setLastAction(null);
+        }}
+        lastAction={undoBar()}
+        payday={settings.payday}
+        onUpdate={updateEnvelope}
+        onRemove={removeEnvelope}
+        onRestore={restoreEnvelope}
+        openForm={openForm}
+        onOpenFormChange={setOpenForm}
+        previewFor={previewFor}
+        paycheckLabel={nameOfPaycheck}
+        fillUp={fillUpView === null ? undefined : { view: fillUpView, currentDone: status.openCents === 0 }}
+        lanes={inLanes ? { setAsideSoFarCents: Math.max(0, status.movements.netCents), openCents: status.openCents } : undefined}
+        embedded={inLanes}
+      />
+    );
+  }
+
+  // The lanes need your own expenses on the plan's ruler; examples keep the plain Columns.
+  const showLanes = layout === 'columns' && !showingExample && fillUpView !== null && savedEnvelopes.length > 0;
+
   return (
     <div className="page">
       <header className="masthead">
@@ -343,169 +385,154 @@ export default function App() {
 
       {!isLoading && (
         <main className="content">
-          <div className="top-stack">
-            {showingExample && (
-              <ExampleBanner onAddFirst={openAddForm} onHide={() => changeHideExamples(true)} />
-            )}
+          <div className="dash-side">
+            <div className="top-stack">
+              {showingExample && (
+                <ExampleBanner onAddFirst={openAddForm} onHide={() => changeHideExamples(true)} />
+              )}
 
-            {listIsEmpty && hideExamples ? (
-              <EmptyStart onAddFirst={openAddForm} onShowExamples={() => changeHideExamples(false)} />
-            ) : (
-              <ThisMonth
-                monthPlan={shownPlan[0]}
-                envelopes={shownEnvelopes}
-                progress={progress}
-                isExample={showingExample}
-                closestFirst={status.rule === 'closest'}
-                paycheckLabel={paycheckLabel}
-                today={dayOfDate(new Date())}
-                stillOpenCents={showingExample ? undefined : status.openCents}
-                onAddExpense={showingExample ? undefined : openAddForm}
-                strip={
-                  !showingExample && hasPayday && paycheckLabel !== undefined ? (
-                    <PaycheckStrip
-                      period={period}
+              {listIsEmpty && hideExamples ? (
+                <EmptyStart onAddFirst={openAddForm} onShowExamples={() => changeHideExamples(false)} />
+              ) : (
+                <ThisMonth
+                  monthPlan={shownPlan[0]}
+                  envelopes={shownEnvelopes}
+                  progress={progress}
+                  isExample={showingExample}
+                  closestFirst={status.rule === 'closest'}
+                  paycheckLabel={paycheckLabel}
+                  today={dayOfDate(new Date())}
+                  stillOpenCents={showingExample ? undefined : status.openCents}
+                  onAddExpense={showingExample ? undefined : openAddForm}
+                  strip={
+                    !showingExample && hasPayday && paycheckLabel !== undefined ? (
+                      <PaycheckStrip
+                        period={period}
+                        log={log}
+                        payday={settings.payday}
+                        today={today}
+                        paycheckLabel={paycheckLabel}
+                        onLog={(details) => logPaycheck({ ...details, ...closingSplit() })}
+                        onUndo={deleteLogEntry}
+                      />
+                    ) : undefined
+                  }
+                >
+                  {!showingExample && plan[0] !== undefined && (
+                    <MonthProgress
+                      monthPlan={plan[0]}
+                      status={status}
                       log={log}
-                      payday={settings.payday}
-                      today={today}
-                      paycheckLabel={paycheckLabel}
-                      onLog={(details) => logPaycheck({ ...details, ...closingSplit() })}
+                      today={dayOfDate(new Date())}
+                      periodName={periodName}
+                      onLog={logSetAside}
                       onUndo={deleteLogEntry}
                     />
-                  ) : undefined
-                }
-              >
-                {!showingExample && plan[0] !== undefined && (
-                  <MonthProgress
-                    monthPlan={plan[0]}
-                    status={status}
+                  )}
+                  {!showingExample && (
+                    <OverdueNotes
+                      overdue={overdueExpenses(savedEnvelopes, today)}
+                      today={today}
+                      onDone={(id) => {
+                        setFinishingFor(id);
+                        setLastAction(null);
+                      }}
+                      onMove={(id, due) => updateEnvelope(id, due.dueDate === undefined ? { dueMonth: due.dueMonth } : due)}
+                    />
+                  )}
+                </ThisMonth>
+              )}
+            </div>
+            {!showingExample && !listIsEmpty && (
+              <PotBox potCents={pot} potShares={potShares}>
+                <PotPanel
+                  inBox
+                  potCents={pot}
+                  potShares={potShares}
+                  closestFirst={status.rule === 'closest'}
+                  log={log}
+                  onChangeAmount={changeLogAmount}
+                  onDelete={deleteLogEntry}
+                  nameOf={(id) => savedEnvelopes.find((envelope) => envelope.id === id)?.name}
+                  problemWith={problemWithAmount}
+                >
+                  <TakeOut
+                    previewFor={(amountCents) => previewTakeOut(planningExpenses, log, currentPaycheck, period.start, amountCents, today)}
+                    unit={hasPayday ? 'paycheck' : 'month'}
+                    periodLabel={(month) => formatMonthShort(periodMonth(month, settings.payday))}
                     log={log}
-                    today={dayOfDate(new Date())}
-                    periodName={periodName}
-                    onLog={logSetAside}
+                    onTakeOut={(amountCents, reason) => takeOut({ date: today, month: currentPaycheck, amountCents, reason })}
                     onUndo={deleteLogEntry}
                   />
-                )}
-                {!showingExample && (
-                  <OverdueNotes
-                    overdue={overdueExpenses(savedEnvelopes, today)}
-                    today={today}
-                    onDone={(id) => {
-                      setFinishingFor(id);
-                      setLastAction(null);
-                    }}
-                    onMove={(id, due) => updateEnvelope(id, due.dueDate === undefined ? { dueMonth: due.dueMonth } : due)}
-                  />
-                )}
-              </ThisMonth>
+                </PotPanel>
+              </PotBox>
             )}
           </div>
 
-          {plan.length > 0 && (
-            <section className="ledger" aria-labelledby="ledger-title">
-              <div className="ledger-heading">
-                <h2 id="ledger-title" className="ledger-title">
-                  What's coming
-                  {showingExample && <span className="example-tag">Example</span>}
-                </h2>
-                <div className="layout-toggle" role="group" aria-label="Ledger layout">
-                  {(['timeline', 'columns'] as const).map((option) => (
-                    <button
-                      key={option}
-                      type="button"
-                      aria-pressed={layout === option}
-                      onClick={() => setLayout(option)}
-                    >
-                      {option === 'timeline' ? 'Timeline' : 'Columns'}
-                    </button>
-                  ))}
+          <div className="dash-main">
+            {plan.length > 0 && (
+              <section className="ledger" aria-labelledby="ledger-title">
+                <div className="ledger-heading">
+                  <h2 id="ledger-title" className="ledger-title">
+                    What's coming
+                    {showingExample && <span className="example-tag">Example</span>}
+                  </h2>
+                  <div className="layout-toggle" role="group" aria-label="Ledger layout">
+                    {(['timeline', 'columns'] as const).map((option) => (
+                      <button
+                        key={option}
+                        type="button"
+                        aria-pressed={layout === option}
+                        onClick={() => setLayout(option)}
+                      >
+                        {option === 'timeline' ? 'Timeline' : 'Columns'}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
-              {hasPayday && layout === 'columns' && (
-                <p className="field-hint ledger-note">
-                  Each column is one paycheck, from payday (around the {ordinal(settings.payday)}) to the next.
-                  Money is put aside at its left edge; thin lines show where a month begins.
-                </p>
-              )}
-              {layout === 'columns' ? (
-                <LedgerColumns plan={shownPlan} envelopes={shownEnvelopes} payday={settings.payday} currentStart={period.startIsReal ? period.start : undefined} today={today} done={finished} past={past} lateSince={lateSince} setAsideSoFarCents={showingExample ? undefined : Math.max(0, status.movements.netCents)} />
-              ) : (
-                <LedgerTimeline
-                  plan={shownPlan}
-                  envelopes={shownEnvelopes}
-                  payday={settings.payday}
-                  currentStart={period.startIsReal ? period.start : undefined}
-                  today={today}
-                  done={finished}
-                  past={past}
-                  setAsideSoFarCents={showingExample ? undefined : Math.max(0, status.movements.netCents)}
-                  lateSince={lateSince}
-                />
-              )}
-            </section>
-          )}
+                {hasPayday && layout === 'columns' && (
+                  <p className="field-hint ledger-note">
+                    Each column is one paycheck, from payday (around the {ordinal(settings.payday)}) to the next.
+                    Money is put aside at its left edge; thin lines show where a month begins.
+                  </p>
+                )}
+                {showLanes ? (
+                  expenseList(true)
+                ) : layout === 'columns' ? (
+                  <LedgerColumns plan={shownPlan} envelopes={shownEnvelopes} payday={settings.payday} currentStart={period.startIsReal ? period.start : undefined} today={today} done={finished} past={past} lateSince={lateSince} setAsideSoFarCents={showingExample ? undefined : Math.max(0, status.movements.netCents)} />
+                ) : (
+                  <LedgerTimeline
+                    plan={shownPlan}
+                    envelopes={shownEnvelopes}
+                    payday={settings.payday}
+                    currentStart={period.startIsReal ? period.start : undefined}
+                    today={today}
+                    done={finished}
+                    past={past}
+                    setAsideSoFarCents={showingExample ? undefined : Math.max(0, status.movements.netCents)}
+                    lateSince={lateSince}
+                  />
+                )}
+              </section>
+            )}
 
-          {!showingExample && !listIsEmpty && (
-            <PotPanel
-              potCents={pot}
-              potShares={potShares}
-              closestFirst={status.rule === 'closest'}
-              log={log}
-              onChangeAmount={changeLogAmount}
-              onDelete={deleteLogEntry}
-              nameOf={(id) => savedEnvelopes.find((envelope) => envelope.id === id)?.name}
-              problemWith={problemWithAmount}
-            >
-              <TakeOut
-                previewFor={(amountCents) => previewTakeOut(planningExpenses, log, currentPaycheck, period.start, amountCents, today)}
-                unit={hasPayday ? 'paycheck' : 'month'}
-                periodLabel={(month) => formatMonthShort(periodMonth(month, settings.payday))}
-                log={log}
-                onTakeOut={(amountCents, reason) => takeOut({ date: today, month: currentPaycheck, amountCents, reason })}
-                onUndo={deleteLogEntry}
-              />
-            </PotPanel>
-          )}
 
-          <ExpenseList
-            envelopes={savedEnvelopes}
-            sharesById={shownShares}
-            progress={progress}
-            onPay={(id) => {
-              setPayingFor(id);
-              setLastAction(null);
-            }}
-            onDone={(id) => {
-              setFinishingFor(id);
-              setLastAction(null);
-            }}
-            onReopen={(id) => {
-              reopen(id);
-              setLastAction(null);
-            }}
-            lastAction={undoBar()}
-            payday={settings.payday}
-            onUpdate={updateEnvelope}
-            onRemove={removeEnvelope}
-            onRestore={restoreEnvelope}
-            openForm={openForm}
-            onOpenFormChange={setOpenForm}
-            previewFor={previewFor}
-            paycheckLabel={nameOfPaycheck}
-            fillUp={fillUpView === null ? undefined : { view: fillUpView, currentDone: status.openCents === 0 }}
-          />
+            {!showLanes && expenseList(false)}
+          </div>
 
-          <SyncPanel
-            account={account}
-            linkError={linkError}
-            onSendLink={sendLink}
-            onSignOut={signOutOfThisDevice}
-            sync={sync}
-          />
+          <div className="dash-rest">
+            <SyncPanel
+              account={account}
+              linkError={linkError}
+              onSendLink={sendLink}
+              onSignOut={signOutOfThisDevice}
+              sync={sync}
+            />
 
-          <PaydaySettings payday={settings.payday} onChange={setPayday} />
+            <PaydaySettings payday={settings.payday} onChange={setPayday} />
 
-          <Backup data={data} onRestore={replaceAll} isSyncing={isSyncing} />
+            <Backup data={data} onRestore={replaceAll} isSyncing={isSyncing} />
+          </div>
           {openForm === NEW_EXPENSE && (
             <AddExpenseDialog
               payday={settings.payday}

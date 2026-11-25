@@ -1,5 +1,6 @@
 import type { ColumnsLayout, Spot } from './columns';
-import type { Cents, Envelope } from './types';
+import { dayBefore } from './months';
+import type { Cents, Day, Envelope } from './types';
 
 // How each expense fills up, on one ruler across all paychecks: 0 is the left
 // edge of the first paycheck, 1 the end of the last. Built from the Columns
@@ -68,9 +69,35 @@ export function buildFillUp(layout: ColumnsLayout, envelopes: Envelope[]): FillU
     .sort((a, b) => a.due.from - b.due.from || a.name.localeCompare(b.name));
 }
 
+/** One paycheck on the ruler, for the lanes' header and footer. */
+export interface FillUpPaycheck {
+  /** Its first day, and its last: the day before the next payday. */
+  from: Day;
+  last: Day;
+  isCurrent: boolean;
+  /** What the plan asks you to put aside from it. */
+  putAsideCents: Cents;
+  /** What leaves the pot during it: bills, and expenses finished in it. */
+  goingOutCents: Cents;
+  /** Where it starts on the ruler, and how much of it it takes. */
+  x: number;
+  width: number;
+}
+
+/** A finished expense on the ruler: what it cost, on the day it was done. */
+export interface FillUpDone {
+  x: number;
+  costCents: Cents;
+  date: Day;
+}
+
 export interface FillUpView {
   /** One bar per expense, by id. */
   rows: Record<string, FillUpRow>;
+  /** The paychecks the ruler spans, in order. */
+  paycheckSpans: FillUpPaycheck[];
+  /** Finished expenses shown on the ruler, by expense id. */
+  done: Record<string, FillUpDone>;
   /** Where each month begins on the ruler. */
   monthLines: { month: string; x: number }[];
   /** Where today is on the ruler. */
@@ -82,8 +109,24 @@ export interface FillUpView {
 /** Everything the expense list needs to draw its bars on one shared time axis. */
 export function buildFillUpView(layout: ColumnsLayout, envelopes: Envelope[]): FillUpView {
   const brickCount = layout.bricks.length;
+  // What leaves the pot in each paycheck: the bills it pays and what finished in it.
+  const goingOut = layout.bricks.map(() => 0);
+  for (const bill of layout.bills) goingOut[bill.start.brick] += bill.amountCents;
+  for (const { mark, spot } of layout.done) goingOut[spot.brick] += mark.costCents;
   return {
     rows: Object.fromEntries(buildFillUp(layout, envelopes).map((row) => [row.id, row])),
+    paycheckSpans: layout.bricks.map((brick, index) => ({
+      from: brick.from,
+      last: dayBefore(brick.next),
+      isCurrent: brick.isCurrent,
+      putAsideCents: brick.totalCents,
+      goingOutCents: goingOut[index],
+      x: index / brickCount,
+      width: 1 / brickCount,
+    })),
+    done: Object.fromEntries(
+      layout.done.map(({ mark, spot }) => [mark.expenseId, { x: onRuler(spot, brickCount), costCents: mark.costCents, date: mark.date }]),
+    ),
     monthLines: layout.monthLines.map((line) => ({ month: line.month, x: onRuler(line, brickCount) })),
     today: onRuler(layout.today, brickCount),
     paychecks: brickCount,

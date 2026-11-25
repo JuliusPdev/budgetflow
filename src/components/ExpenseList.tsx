@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import type { ExpensePreview } from '../engine/expensePreview';
 import type { FillUpView } from '../engine/fillUp';
 import type { ExpenseProgress } from '../engine/payments';
@@ -6,7 +6,7 @@ import type { Cents, DoneStamp, Expense, ExpenseFields, Month } from '../engine/
 import { fundingMonth, DEFAULT_PAYDAY, paycheckDates } from '../engine/timing';
 import { formatDayShort, formatDue, formatEuros } from '../utils/format';
 import { ExpenseForm } from './ExpenseForm';
-import { FillUpAxis, FillUpBar } from './FillUpBar';
+import { FillUpAxis, FillUpBar, FillUpDoneBar, LanesFooter, LanesHeader } from './FillUpBar';
 
 interface ExpenseListProps {
   envelopes: Expense[];
@@ -36,6 +36,13 @@ interface ExpenseListProps {
   paycheckLabel?: (month: Month) => string;
   /** How each expense fills up on one time axis; missing for example data. */
   fillUp?: { view: FillUpView; currentDone: boolean };
+  /**
+   * The lanes view (Columns): each paycheck on top with what it asks, amounts
+   * on the bars, and what goes out below. Needs `fillUp`.
+   */
+  lanes?: { setAsideSoFarCents: Cents; openCents: Cents };
+  /** Shown inside What's coming: its heading already names the section. */
+  embedded?: boolean;
 }
 
 /** The openForm value meaning "the add-an-expense form". */
@@ -59,7 +66,10 @@ export function ExpenseList({
   previewFor,
   paycheckLabel,
   fillUp,
+  lanes,
+  embedded = false,
 }: ExpenseListProps) {
+  const showLanes = lanes !== undefined && fillUp !== undefined;
   const [lastDeleted, setLastDeleted] = useState<{ envelope: Expense; index: number } | null>(null);
 
   // Done ones at the bottom, the most recently finished first.
@@ -124,8 +134,8 @@ export function ExpenseList({
   }
 
   return (
-    <section className="expenses" aria-labelledby="expenses-title">
-      <h2 id="expenses-title" className="expenses-title">
+    <section className={showLanes ? 'expenses expenses--lanes' : 'expenses'} aria-labelledby="expenses-title">
+      <h2 id="expenses-title" className={embedded ? 'sr-only' : 'expenses-title'}>
         Your expenses
       </h2>
 
@@ -166,6 +176,9 @@ export function ExpenseList({
             <FillUpAxis view={fillUp.view} />
           </div>
         )}
+        {showLanes && byDueMonth.length > 0 && (
+          <LanesHeader view={fillUp.view} setAsideSoFarCents={lanes.setAsideSoFarCents} openCents={lanes.openCents} />
+        )}
 
         {byDueMonth.length > 0 && (
           <ul className="expense-list">
@@ -200,11 +213,13 @@ export function ExpenseList({
                   onDelete={() => handleDelete(envelope)}
                   payday={payday}
                   fillUp={fillUp}
+                  labelled={showLanes}
                 />
               ),
             )}
           </ul>
         )}
+        {showLanes && byDueMonth.length > 0 && <LanesFooter view={fillUp.view} />}
       </div>
 
       {/* Opens the add-an-expense dialog, the same one as in the top card. */}
@@ -230,11 +245,25 @@ interface ExpenseRowProps {
   onEdit: () => void;
   onDelete: () => void;
   fillUp: ExpenseListProps['fillUp'];
+  /** In the lanes view: amounts on the bar. */
+  labelled: boolean;
 }
 
-function ExpenseRow({ envelope, shareCents, paidCents, spentCents, payday, onPay, onDone, onReopen, onEdit, onDelete, fillUp }: ExpenseRowProps) {
+function ExpenseRow({ envelope, shareCents, paidCents, spentCents, payday, onPay, onDone, onReopen, onEdit, onDelete, fillUp, labelled }: ExpenseRowProps) {
   if (envelope.done !== undefined) {
-    return <DoneRow envelope={envelope} done={envelope.done} spentCents={spentCents} paidCents={paidCents} withBar={fillUp !== undefined} onReopen={onReopen} onDelete={onDelete} />;
+    const doneOnRuler = labelled ? fillUp?.view.done[envelope.id] : undefined;
+    return (
+      <DoneRow
+        envelope={envelope}
+        done={envelope.done}
+        spentCents={spentCents}
+        paidCents={paidCents}
+        withBar={fillUp !== undefined}
+        bar={fillUp !== undefined && doneOnRuler !== undefined ? <FillUpDoneBar done={doneOnRuler} view={fillUp.view} /> : undefined}
+        onReopen={onReopen}
+        onDelete={onDelete}
+      />
+    );
   }
   const bar = fillUp?.view.rows[envelope.id];
   const isPaidInFull = paidCents >= envelope.targetCents;
@@ -269,7 +298,7 @@ function ExpenseRow({ envelope, shareCents, paidCents, spentCents, payday, onPay
       </div>
       {fillUp !== undefined && (
         <div className="expense-bar">
-          {bar !== undefined && <FillUpBar row={bar} view={fillUp.view} currentDone={fillUp.currentDone} />}
+          {bar !== undefined && <FillUpBar row={bar} view={fillUp.view} currentDone={fillUp.currentDone} labelled={labelled} />}
         </div>
       )}
       <div className="expense-actions">
@@ -306,12 +335,14 @@ interface DoneRowProps {
   spentCents: Cents;
   /** Keeps the row lined up with the rows that have a bar. */
   withBar: boolean;
+  /** In the lanes view: what it cost, on the day it was done. */
+  bar?: ReactNode;
   onReopen: () => void;
   onDelete: () => void;
 }
 
 /** A finished expense: what it really cost, kept at the bottom of the list. */
-function DoneRow({ envelope, done, paidCents, spentCents, withBar, onReopen, onDelete }: DoneRowProps) {
+function DoneRow({ envelope, done, paidCents, spentCents, withBar, bar, onReopen, onDelete }: DoneRowProps) {
   const { targetCents, name } = envelope;
   // Payments partly from spending money, plus any extra the pot never paid.
   const fromSpending = spentCents + Math.max(0, done.costCents - paidCents);
@@ -333,7 +364,7 @@ function DoneRow({ envelope, done, paidCents, spentCents, withBar, onReopen, onD
         </p>
         <p className="expense-details">{details.join(' · ')}</p>
       </div>
-      {withBar && <div className="expense-bar" />}
+      {withBar && <div className="expense-bar">{bar}</div>}
       <div className="expense-actions">
         <button type="button" className="button-text" onClick={onReopen} aria-label={`Reopen ${name}`}>
           Reopen

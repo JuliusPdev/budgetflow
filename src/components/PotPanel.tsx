@@ -18,6 +18,8 @@ interface PotPanelProps {
   problemWith?: (entry: LogEntry, amountCents: Cents) => string | null;
   /** Taking money out, shown with the pot's other actions. */
   children?: ReactNode;
+  /** Inside the pot box, which already shows the amount and what it's for. */
+  inBox?: boolean;
 }
 
 /**
@@ -34,11 +36,27 @@ export function PotPanel({
   nameOf,
   problemWith,
   children,
+  inBox = false,
 }: PotPanelProps) {
   const id = useId();
   // What's really in the pot for expenses. Not the shares added up: an expense paid
   // before its due month keeps a share of money that has already left the pot.
   const forExpensesCents = Math.max(0, potCents - potShares.extraCents);
+
+  if (inBox) {
+    return (
+      <div className="pot pot--in-box">
+        {potShares.shortfallCents > 0 && (
+          <p className="pot-warning">
+            More went out than came in: {formatEuros(potShares.shortfallCents)} to put back first. It's in this
+            period's plan.
+          </p>
+        )}
+        {children}
+        <PotHistory log={log} onChangeAmount={onChangeAmount} onDelete={onDelete} nameOf={nameOf} problemWith={problemWith} />
+      </div>
+    );
+  }
 
   return (
     <section className="pot" aria-labelledby={`${id}-title`}>

@@ -62,4 +62,32 @@ describe('how each expense fills up', () => {
     // Today, 20 Nov: the last day of the first paycheck.
     expect(round(view.today)).toBe(round(30 / 31 / 4));
   });
+
+  it('lists each paycheck with what it asks and what goes out in it', () => {
+    if (layout === null) throw new Error('no layout');
+    const view = buildFillUpView(layout, [gifts, trip]);
+    const spans = view.paycheckSpans;
+    expect(spans.map((span) => [span.from, span.last])).toEqual([
+      ['2026-10-21', '2026-11-20'],
+      ['2026-11-21', '2026-12-20'],
+      ['2026-12-21', '2027-01-20'],
+      ['2027-01-21', '2027-02-20'],
+    ]);
+    expect(spans.map((span) => span.isCurrent)).toEqual([true, false, false, false]);
+    expect(spans.map((span) => span.putAsideCents)).toEqual(plan.map((month) => month.totalCents));
+    // Gifts leave in the paycheck that pays December; the trip on 25 Jan, in the last one.
+    expect(spans.map((span) => span.goingOutCents)).toEqual([0, 30_000, 0, 80_000]);
+    expect(spans.map((span) => round(span.x))).toEqual([0, 0.25, 0.5, 0.75]);
+  });
+
+  it('places a finished expense on the day it was done', () => {
+    const finished = buildColumns(plan, [gifts, trip], PAYDAY, TODAY, undefined, [
+      { expenseId: 'party', name: 'Party', date: '2026-11-10', costCents: 5_000, plannedCents: 5_000 },
+    ]);
+    if (finished === null) throw new Error('no layout');
+    const view = buildFillUpView(finished, [gifts, trip]);
+    // 10 Nov: 20 of 31 days into the first paycheck.
+    expect(round(view.done.party.x)).toBe(round(20 / 31 / 4));
+    expect(view.paycheckSpans[0].goingOutCents).toBe(5_000);
+  });
 });

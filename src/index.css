@@ -18,6 +18,8 @@
   /* Meaning */
   --green: #0a7d4f; /* saving; dark enough to read as text on white */
   --green-soft: #e1f2e9;
+  /* The paycheck you're in, behind the lanes: lighter than the expense tracks. */
+  --green-tint: #f1f8f4;
   --terracotta: #b8461b; /* money going out */
   --terracotta-soft: #f6e1d6;
 
@@ -1200,6 +1202,195 @@ ol {
   border-left: 1px dashed var(--green);
 }
 
+/* ─── Lanes (Columns): each paycheck on top, amounts on the bars, what goes out below ─── */
+
+/* Each paycheck needs room for its amounts and dates. */
+.expenses--lanes .fu-axis,
+.expenses--lanes .fu-bar {
+  width: max(100%, calc(var(--paychecks) * 10rem));
+}
+
+/* A soft fade at the right edge: more paychecks follow when you scroll. */
+.expenses--lanes .fu-scroll {
+  mask-image: linear-gradient(to right, #000 calc(100% - 1.5rem), transparent);
+}
+
+/* Only the bottom row shows a scrollbar; it moves every row. */
+.expenses--lanes .expense-axis:first-child .fu-scroll--axis {
+  padding-bottom: 0;
+  scrollbar-width: none;
+}
+
+.expenses--lanes .expense-axis:first-child .fu-scroll--axis::-webkit-scrollbar {
+  display: none;
+}
+
+.fu-bar--labelled {
+  height: 60px;
+}
+
+.fu-bar--labelled .fu-track,
+.fu-bar--labelled .fu-filled,
+.fu-bar--labelled .fu-due-month {
+  top: 27px;
+}
+
+.fu-bar--labelled .fu-dot,
+.fu-bar--labelled .fu-due-day {
+  top: 25px;
+}
+
+.fu-now {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: var(--green-tint);
+}
+
+.fu-dot-label,
+.fu-due-label {
+  position: absolute;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.fu-dot-label {
+  top: 6px;
+  color: var(--green);
+}
+
+.fu-due-label {
+  top: 40px;
+  color: var(--terracotta);
+}
+
+.fu-due-label--done {
+  top: 22px;
+}
+
+.lanes-row > .fu-scroll {
+  grid-area: bar;
+}
+
+.lanes-label {
+  grid-area: text;
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.lanes-label--in {
+  color: var(--green);
+}
+
+.lanes-label--quiet {
+  font-size: 0.8125rem;
+  font-weight: 400;
+  color: var(--dim);
+}
+
+.lanes-label--out {
+  color: var(--terracotta);
+}
+
+.lanes-cells {
+  height: 2rem;
+}
+
+.lanes-cells--paychecks {
+  height: 2.75rem;
+}
+
+.lanes-cells--amounts {
+  height: 4.25rem;
+}
+
+.lanes-cell {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  box-sizing: border-box;
+  padding: 6px 8px;
+}
+
+.lanes-cell.is-now {
+  background: var(--green-tint);
+}
+
+.lanes-paycheck-bar {
+  height: 6px;
+  background: var(--line-soft);
+  border-radius: 999px;
+}
+
+.is-now .lanes-paycheck-bar {
+  background: var(--green);
+}
+
+.lanes-dates {
+  font-size: 0.75rem;
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+.lanes-now {
+  color: var(--green);
+}
+
+.lanes-amount {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: var(--green);
+}
+
+.lanes-amount.is-empty {
+  color: var(--dim);
+}
+
+.lanes-amount--out {
+  font-size: 1rem;
+  color: var(--terracotta);
+}
+
+.lanes-progress {
+  height: 4px;
+  overflow: hidden;
+  background: var(--paper-raised);
+  border-radius: 999px;
+}
+
+.lanes-progress > span {
+  display: block;
+  height: 100%;
+  background: var(--green);
+}
+
+.lanes-progress-text {
+  overflow: hidden;
+  font-size: 0.6875rem;
+  color: var(--green);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.lanes-later {
+  font-size: 0.75rem;
+  color: var(--dim);
+}
+
+.lanes-row--last {
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--line);
+}
+
+.lanes-row--footer {
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--line);
+}
+
 /* Phone: name and buttons on top, the bar full width underneath. */
 @media (max-width: 640px) {
   .expense-row.expense-row--with-bar {
@@ -1213,6 +1404,12 @@ ol {
   .expense-axis {
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas: 'bar';
+  }
+
+  .expense-axis.lanes-row {
+    grid-template-areas:
+      'text'
+      'bar';
   }
 }
 
@@ -2074,4 +2271,109 @@ ol {
 .take-out-title {
   font-weight: 700;
   letter-spacing: -0.02em;
+}
+
+/* ─── Pot box: the pot in one line; Details folds out the rest ───────────── */
+
+.pot-box {
+  background: var(--paper-raised);
+  border-radius: var(--radius-card);
+}
+
+.pot-box-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-4);
+  font: inherit;
+  color: var(--ink);
+  text-align: left;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-card);
+  cursor: pointer;
+}
+
+.pot-box-text {
+  display: grid;
+  gap: 2px;
+}
+
+.pot-box-label {
+  font-size: 0.8125rem;
+  color: var(--dim);
+}
+
+.pot-box-amount {
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.pot-box-summary {
+  font-size: 0.75rem;
+  color: var(--dim);
+}
+
+.pot-box-summary.is-short {
+  color: var(--terracotta);
+}
+
+.pot-box-more {
+  font-size: 0.8125rem;
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+.pot-box-toggle:hover .pot-box-more {
+  color: var(--ink);
+}
+
+.pot-box-details {
+  padding: 0 var(--space-4) var(--space-4);
+}
+
+/* ─── Page: what you do now on the side, what's coming next to it ────────── */
+
+.dash-side,
+.dash-main,
+.dash-rest {
+  display: grid;
+  gap: var(--space-6);
+  min-width: 0;
+}
+
+.dash-side {
+  gap: var(--space-4);
+}
+
+@media (min-width: 1100px) {
+  .page {
+    max-width: 1440px;
+  }
+
+  .content {
+    grid-template-columns: minmax(20rem, 25rem) minmax(0, 1fr);
+    column-gap: var(--space-5);
+    align-items: start;
+  }
+
+  .dash-rest {
+    grid-column: 1 / -1;
+  }
+
+  /* In the side column the card is narrow: "What it's for" goes under the number. */
+  .dash-side .this-month {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-5);
+    padding: var(--space-4);
+  }
+
+  .dash-side .this-month-goals {
+    padding-top: var(--space-4);
+    padding-left: 0;
+    border-top: 1px solid var(--line-soft);
+    border-left: 0;
+  }
 }
