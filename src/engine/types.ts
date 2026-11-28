@@ -17,6 +17,14 @@ export type Day = string;
  */
 export type Cents = number;
 
+/** A cost that comes out of every paycheck: rent, phone, insurance. */
+export interface FixedCost {
+  id: string;
+  name: string;
+  /** Per month. */
+  amountCents: Cents;
+}
+
 /**
  * One known future one-off expense — only facts you entered. How much of your
  * pot is meant for it is calculated fresh every time (engine/pot.ts),
